@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+backend/node_modules/
+
+# Environment variables (contain secrets)
+.env
+backend/.env
+frontend/.env
+
+# Build output
+frontend/dist/
+frontend/.vite/
+
+# Database files
+backend/data/*.db
+backend/data/*.db-shm
+backend/data/*.db-wal
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# Claude launch config (local only)
+.claude/
