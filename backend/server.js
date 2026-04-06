@@ -8,19 +8,22 @@ const IS_PROD = process.env.NODE_ENV === 'production';
 process.on('uncaughtException',      err => console.error('[uncaughtException]',      err.message, err.stack));
 process.on('unhandledRejection', (reason) => console.error('[unhandledRejection]', reason));
 
-// ── Auto-kill any process already on our port before binding ─────────────────
+// ── Port setup ───────────────────────────────────────────────────────────────
 // In production Railway sets PORT; locally use API_PORT or 3001
 const { execSync } = require('child_process');
 const PORT = parseInt(process.env.PORT || process.env.API_PORT || '3001', 10);
-try {
-  const pids = execSync(`lsof -ti:${PORT}`, { encoding: 'utf8' }).trim();
-  if (pids) {
-    pids.split('\n').forEach(pid => { try { process.kill(Number(pid), 'SIGKILL'); } catch {} });
-    console.log(`[startup] Cleared stale process(es) on port ${PORT}`);
-    // Brief pause so OS releases the port before we bind
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
-  }
-} catch { /* no process on that port — normal */ }
+
+// Auto-kill stale local processes (Mac/Linux dev only — skip in production)
+if (!IS_PROD) {
+  try {
+    const pids = execSync(`lsof -ti:${PORT}`, { encoding: 'utf8' }).trim();
+    if (pids) {
+      pids.split('\n').forEach(pid => { try { process.kill(Number(pid), 'SIGKILL'); } catch {} });
+      console.log(`[startup] Cleared stale process(es) on port ${PORT}`);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
+    }
+  } catch { /* no process on that port — normal */ }
+}
 
 const express = require('express');
 const cors = require('cors');
@@ -118,9 +121,14 @@ const server = app.listen(PORT, () => {
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    console.warn(`[startup] Port ${PORT} still busy — retrying kill…`);
-    try { execSync(`lsof -ti:${PORT} | xargs kill -9`, { stdio: 'ignore' }); } catch {}
-    setTimeout(() => server.listen(PORT), 500);
+    if (!IS_PROD) {
+      console.warn(`[startup] Port ${PORT} still busy — retrying kill…`);
+      try { execSync(`lsof -ti:${PORT} | xargs kill -9`, { stdio: 'ignore' }); } catch {}
+      setTimeout(() => server.listen(PORT), 500);
+    } else {
+      console.error(`[startup] Port ${PORT} already in use — exiting`);
+      process.exit(1);
+    }
   } else {
     throw err;
   }
