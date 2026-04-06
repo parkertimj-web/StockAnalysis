@@ -2,15 +2,16 @@
 
 require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 
+const IS_PROD = process.env.NODE_ENV === 'production';
+
 // ── Keep the process alive — log crashes instead of exiting ──────────────────
 process.on('uncaughtException',      err => console.error('[uncaughtException]',      err.message, err.stack));
 process.on('unhandledRejection', (reason) => console.error('[unhandledRejection]', reason));
 
 // ── Auto-kill any process already on our port before binding ─────────────────
-// Use API_PORT (or hard-coded 3001) — never the generic PORT env var, which
-// preview/CI tools set to the *frontend* port (5173) and would kill Vite.
+// In production Railway sets PORT; locally use API_PORT or 3001
 const { execSync } = require('child_process');
-const PORT = parseInt(process.env.API_PORT || '3001', 10);
+const PORT = parseInt(process.env.PORT || process.env.API_PORT || '3001', 10);
 try {
   const pids = execSync(`lsof -ti:${PORT}`, { encoding: 'utf8' }).trim();
   if (pids) {
@@ -29,7 +30,8 @@ const path = require('path');
 const app = express();
 
 // Middleware
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173' }));
+// In production the frontend is served from the same origin — no CORS needed
+app.use(cors({ origin: IS_PROD ? false : (process.env.FRONTEND_URL || 'http://localhost:5173') }));
 app.use(express.json());
 
 // Routes
@@ -50,6 +52,16 @@ app.get('/api/vapid-public-key', (req, res) => {
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, time: new Date().toISOString() });
 });
+
+// ── Serve React frontend in production ───────────────────────────────────────
+if (IS_PROD) {
+  const frontendDist = path.join(__dirname, '../frontend/dist');
+  app.use(express.static(frontendDist));
+  // All non-API routes go to React
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(frontendDist, 'index.html'));
+  });
+}
 
 // ── Cron job: evaluate signals every 15 min on market days 9-16 ET ──
 // ET is UTC-5 (EST) / UTC-4 (EDT) — use UTC 14:00-21:00 range as rough cover
