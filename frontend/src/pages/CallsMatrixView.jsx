@@ -120,66 +120,70 @@ export default function CallsMatrixView() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h1 className="text-sm font-semibold text-gray-200">{symbol} Calls Matrix</h1>
-      </div>
 
-      {/* Expiry selector */}
-      <div className="card p-3 space-y-2">
+      {/* ── Sticky header: title + expiry selector ── */}
+      <div className="sticky top-0 z-20 bg-gray-950 space-y-3 pb-3">
         <div className="flex items-center justify-between">
-          <span className="text-[10px] text-gray-300 uppercase tracking-wide">
-            Expiry Dates — Fridays only
-            {selectedExpiries.length > 0 && (
-              <span className="ml-1 text-blue-400">· {selectedExpiries.length} selected</span>
-            )}
-          </span>
-          <button
-            onClick={() => setSelectedExpiries([])}
-            className="btn-ghost py-0.5 px-2 text-[10px]"
-          >Clear</button>
+          <h1 className="text-sm font-semibold text-gray-200">{symbol} Calls Matrix</h1>
         </div>
 
-        {groupFridaysByYear(allExpiries).map(([year, dates]) => (
-          <div key={year}>
-            <div className="text-[10px] text-gray-300 uppercase tracking-widest mb-1">
-              {year}{Number(year) >= new Date().getFullYear() + 1 ? ' · LEAPS' : ''}
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {dates.map(d => (
-                <button
-                  key={d}
-                  onClick={() => toggleExpiry(d)}
-                  className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
-                    selectedExpiries.includes(d)
-                      ? 'bg-blue-600/30 border-blue-500 text-blue-300'
-                      : 'bg-gray-900 border-gray-800 text-gray-300 hover:border-blue-600 hover:text-gray-200'
-                  }`}
-                >
-                  {format(new Date(d), 'MMM d')}
-                </button>
-              ))}
-            </div>
+        {/* Expiry selector */}
+        <div className="card p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-gray-300 uppercase tracking-wide">
+              Expiry Dates — Fridays only
+              {selectedExpiries.length > 0 && (
+                <span className="ml-1 text-blue-400">· {selectedExpiries.length} selected</span>
+              )}
+            </span>
+            <button
+              onClick={() => setSelectedExpiries([])}
+              className="btn-ghost py-0.5 px-2 text-[10px]"
+            >Clear</button>
           </div>
-        ))}
 
-        <div className="flex gap-2 items-center pt-1 border-t border-gray-800/50">
-          <input
-            value={strikeMin}
-            onChange={e => setStrikeMin(e.target.value)}
-            placeholder="Strike min"
-            className="bg-gray-800 border border-gray-700 text-gray-200 text-xs rounded px-2 py-1 w-24"
-          />
-          <span className="text-gray-300 text-xs">—</span>
-          <input
-            value={strikeMax}
-            onChange={e => setStrikeMax(e.target.value)}
-            placeholder="Strike max"
-            className="bg-gray-800 border border-gray-700 text-gray-200 text-xs rounded px-2 py-1 w-24"
-          />
-          <button onClick={buildMatrix} disabled={loading || selectedExpiries.length === 0}
-            className="btn-primary">
-            Build Matrix
-          </button>
+          {groupFridaysByYear(allExpiries).map(([year, dates]) => (
+            <div key={year}>
+              <div className="text-[10px] text-gray-300 uppercase tracking-widest mb-1">
+                {year}{Number(year) >= new Date().getFullYear() + 1 ? ' · LEAPS' : ''}
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {dates.map(d => (
+                  <button
+                    key={d}
+                    onClick={() => toggleExpiry(d)}
+                    className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+                      selectedExpiries.includes(d)
+                        ? 'bg-blue-600/30 border-blue-500 text-blue-300'
+                        : 'bg-gray-900 border-gray-800 text-gray-300 hover:border-blue-600 hover:text-gray-200'
+                    }`}
+                  >
+                    {format(new Date(d), 'MMM d')}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          <div className="flex gap-2 items-center pt-1 border-t border-gray-800/50">
+            <input
+              value={strikeMin}
+              onChange={e => setStrikeMin(e.target.value)}
+              placeholder="Strike min"
+              className="bg-gray-800 border border-gray-700 text-gray-200 text-xs rounded px-2 py-1 w-24"
+            />
+            <span className="text-gray-300 text-xs">—</span>
+            <input
+              value={strikeMax}
+              onChange={e => setStrikeMax(e.target.value)}
+              placeholder="Strike max"
+              className="bg-gray-800 border border-gray-700 text-gray-200 text-xs rounded px-2 py-1 w-24"
+            />
+            <button onClick={buildMatrix} disabled={loading || selectedExpiries.length === 0}
+              className="btn-primary">
+              Build Matrix
+            </button>
+          </div>
         </div>
       </div>
 

@@ -184,84 +184,88 @@ export default function OptionsView() {
   return (
     <div className="space-y-3">
 
-      {/* ── Top bar ── */}
-      <div className="flex flex-wrap items-center gap-2">
-        <h1 className="text-sm font-semibold text-gray-200">{symbol} Options</h1>
-        {underlyingPrice && (
-          <span className="text-xs text-gray-300 mono">@ ${fmt(underlyingPrice)}</span>
-        )}
-        <div className="flex gap-1">
-          {['both','calls','puts'].map(v => (
-            <button key={v} onClick={() => setOptionsPrefs({ view: v })}
-              className={view === v ? 'btn-primary' : 'btn-ghost'}>
-              {v[0].toUpperCase() + v.slice(1)}
-            </button>
-          ))}
-        </div>
-        <div className="flex gap-1">
-          {['all','itm','otm'].map(f => (
-            <button key={f} onClick={() => setOptionsPrefs({ filter: f })}
-              className={filter === f ? 'btn-primary' : 'btn-ghost'}>
-              {f.toUpperCase()}
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* ── Sticky header: top bar + strike range + date picker ── */}
+      <div className="sticky top-0 z-20 bg-gray-950 space-y-3 pb-3">
 
-      {/* ── Strike range ── */}
-      <div className="card p-2 flex flex-wrap items-center gap-2">
-        <span className="text-[10px] text-gray-300 uppercase tracking-wide">Strike</span>
-        {[['±5%',5],['±10%',10],['±20%',20],['±50%',50],['All',null]].map(([lbl,pct]) => (
-          <button key={lbl} onClick={() => applyStrikePreset(pct)}
-            className="btn-ghost py-0.5 px-2 text-[10px]">{lbl}</button>
-        ))}
-        <div className="flex items-center gap-1 ml-auto">
-          <input type="number" placeholder="Min" value={strikeMin}
-            onChange={e => setStrikeMin(e.target.value)}
-            className="bg-gray-800 border border-gray-700 text-gray-200 text-xs rounded px-2 py-1 w-18 focus:outline-none focus:border-blue-500" />
-          <span className="text-gray-300 text-xs">–</span>
-          <input type="number" placeholder="Max" value={strikeMax}
-            onChange={e => setStrikeMax(e.target.value)}
-            className="bg-gray-800 border border-gray-700 text-gray-200 text-xs rounded px-2 py-1 w-18 focus:outline-none focus:border-blue-500" />
-        </div>
-      </div>
-
-      {/* ── Date picker ── */}
-      <div className="card p-3 space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] text-gray-300 uppercase tracking-wide">
-            Expiration Dates
-            {selectedDates.size > 0 && <span className="ml-1 text-blue-400">· {selectedDates.size} selected</span>}
-          </span>
-          <button onClick={() => { setSelectedDates(new Set()); setOptionsPrefs({ savedDates: [] }); }}
-            className="btn-ghost py-0.5 px-2 text-[10px]">Clear</button>
-        </div>
-
-        {loadingDates && <div className="text-gray-300 text-xs animate-pulse">Loading…</div>}
-        {datesError   && <div className="text-red-400 text-xs">{datesError}</div>}
-
-        {groupByYear(allDates.filter(d => new Date(d).getUTCDay() === 5)).map(([year, dates]) => (
-          <div key={year}>
-            <div className="text-[10px] text-gray-300 uppercase tracking-widest mb-1">
-              {year}{Number(year) >= new Date().getFullYear() + 1 ? ' · LEAPS' : ''}
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {dates.map(d => {
-                const on        = selectedDates.has(d);
-                const isLoading = loadingChains.has(d);
-                return (
-                  <button key={d} onClick={() => toggleDate(d)}
-                    className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
-                      on ? 'bg-blue-600/30 border-blue-500 text-blue-300'
-                         : 'bg-gray-900 border-gray-800 text-gray-300 hover:border-blue-600 hover:text-gray-200'
-                    } ${isLoading ? 'opacity-50' : ''}`}>
-                    {format(new Date(d), 'MMM d')}{isLoading ? ' …' : ''}
-                  </button>
-                );
-              })}
-            </div>
+        {/* ── Top bar ── */}
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-sm font-semibold text-gray-200">{symbol} Options</h1>
+          {underlyingPrice && (
+            <span className="text-xs text-gray-300 mono">@ ${fmt(underlyingPrice)}</span>
+          )}
+          <div className="flex gap-1">
+            {['both','calls','puts'].map(v => (
+              <button key={v} onClick={() => setOptionsPrefs({ view: v })}
+                className={view === v ? 'btn-primary' : 'btn-ghost'}>
+                {v[0].toUpperCase() + v.slice(1)}
+              </button>
+            ))}
           </div>
-        ))}
+          <div className="flex gap-1">
+            {['all','itm','otm'].map(f => (
+              <button key={f} onClick={() => setOptionsPrefs({ filter: f })}
+                className={filter === f ? 'btn-primary' : 'btn-ghost'}>
+                {f.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Strike range ── */}
+        <div className="card p-2 flex flex-wrap items-center gap-2">
+          <span className="text-[10px] text-gray-300 uppercase tracking-wide">Strike</span>
+          {[['±5%',5],['±10%',10],['±20%',20],['±50%',50],['All',null]].map(([lbl,pct]) => (
+            <button key={lbl} onClick={() => applyStrikePreset(pct)}
+              className="btn-ghost py-0.5 px-2 text-[10px]">{lbl}</button>
+          ))}
+          <div className="flex items-center gap-1 ml-auto">
+            <input type="number" placeholder="Min" value={strikeMin}
+              onChange={e => setStrikeMin(e.target.value)}
+              className="bg-gray-800 border border-gray-700 text-gray-200 text-xs rounded px-2 py-1 w-18 focus:outline-none focus:border-blue-500" />
+            <span className="text-gray-300 text-xs">–</span>
+            <input type="number" placeholder="Max" value={strikeMax}
+              onChange={e => setStrikeMax(e.target.value)}
+              className="bg-gray-800 border border-gray-700 text-gray-200 text-xs rounded px-2 py-1 w-18 focus:outline-none focus:border-blue-500" />
+          </div>
+        </div>
+
+        {/* ── Date picker ── */}
+        <div className="card p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-gray-300 uppercase tracking-wide">
+              Expiration Dates
+              {selectedDates.size > 0 && <span className="ml-1 text-blue-400">· {selectedDates.size} selected</span>}
+            </span>
+            <button onClick={() => { setSelectedDates(new Set()); setOptionsPrefs({ savedDates: [] }); }}
+              className="btn-ghost py-0.5 px-2 text-[10px]">Clear</button>
+          </div>
+
+          {loadingDates && <div className="text-gray-300 text-xs animate-pulse">Loading…</div>}
+          {datesError   && <div className="text-red-400 text-xs">{datesError}</div>}
+
+          {groupByYear(allDates.filter(d => new Date(d).getUTCDay() === 5)).map(([year, dates]) => (
+            <div key={year}>
+              <div className="text-[10px] text-gray-300 uppercase tracking-widest mb-1">
+                {year}{Number(year) >= new Date().getFullYear() + 1 ? ' · LEAPS' : ''}
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {dates.map(d => {
+                  const on        = selectedDates.has(d);
+                  const isLoading = loadingChains.has(d);
+                  return (
+                    <button key={d} onClick={() => toggleDate(d)}
+                      className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+                        on ? 'bg-blue-600/30 border-blue-500 text-blue-300'
+                           : 'bg-gray-900 border-gray-800 text-gray-300 hover:border-blue-600 hover:text-gray-200'
+                      } ${isLoading ? 'opacity-50' : ''}`}>
+                      {format(new Date(d), 'MMM d')}{isLoading ? ' …' : ''}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* ── Side-by-side chains ── */}
