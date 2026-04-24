@@ -44,9 +44,10 @@ export default function CallsMatrixView() {
 
   useEffect(() => {
     if (!symbol) return;
-    // Restore prefs if same symbol
+    // Restore prefs if same symbol — strip any dates that have since expired
     if (callsMatrixPrefs.forSymbol === symbol) {
-      setSelectedExpiries(callsMatrixPrefs.selectedExpiries || []);
+      const now = Date.now();
+      setSelectedExpiries((callsMatrixPrefs.selectedExpiries || []).filter(d => d > now));
       setStrikeMin(callsMatrixPrefs.strikeMin || '');
       setStrikeMax(callsMatrixPrefs.strikeMax || '');
     } else {
@@ -75,8 +76,13 @@ export default function CallsMatrixView() {
     if (!symbol || selectedExpiries.length === 0) return;
     setLoading(true);
 
+    // Drop any expired dates that may have lingered in state
+    const now = Date.now();
+    const validExpiries = selectedExpiries.filter(d => d > now);
+    if (validExpiries.length === 0) { setLoading(false); return; }
+
     const byExpiry = {};
-    for (const dateMs of selectedExpiries) {
+    for (const dateMs of validExpiries) {
       try {
         const r = await api.get(`/options/${symbol}`, { params: { date: Math.floor(dateMs / 1000) } });
         byExpiry[dateMs] = r.data.calls || [];
@@ -95,12 +101,12 @@ export default function CallsMatrixView() {
     if (minVal) strikes = strikes.filter(s => s >= minVal);
     if (maxVal) strikes = strikes.filter(s => s <= maxVal);
 
-    setMatrix({ byExpiry, strikes, expiries: [...selectedExpiries].sort((a, b) => a - b) });
+    setMatrix({ byExpiry, strikes, expiries: [...validExpiries].sort((a, b) => a - b) });
 
-    // Persist prefs
+    // Persist prefs — only save non-expired dates
     setCallsMatrixPrefs({
       forSymbol: symbol,
-      selectedExpiries,
+      selectedExpiries: validExpiries,
       strikeMin,
       strikeMax,
     });
