@@ -17,10 +17,12 @@ const COLS = [
   { key: 'stopLoss',label: 'Stop' },
   { key: 'sellZone',label: 'Target' },
   { key: 'rr',      label: 'R:R',     tip: 'Risk-to-Reward ratio — potential gain ÷ potential loss. ≥2 is favorable.' },
-  { key: 'base',    label: 'Base/6',  tip: 'Base signal score out of 6: RSI, MACD direction & momentum, price vs SMA 20/50, SMA trend.' },
-  { key: 'adxScore',label: '+ADX/7',  tip: 'ADX-enhanced score out of 7 — base score plus ADX trend-strength components (DI+/DI−).' },
-  { key: 'obv',     label: '+OBV/8',  tip: 'OBV-enhanced score out of 8 — ADX score plus On-Balance Volume momentum confirmation.' },
-  { key: 'regime',  label: '+Rgm/9',  tip: 'Regime-adjusted score out of 9 — full score including SPY market regime (bull/bear/neutral).' },
+  { key: 'core',    label: 'Core/6',  tip: 'Core score out of 6: RSI, MACD direction & momentum, price vs SMA 20/50, SMA 50/200 trend.' },
+  { key: 'tier1',   label: '+T1/11',  tip: 'Tier-1 score out of 11 — core plus Bollinger %B, 52W range, RVOL, EMA 9/21, Stochastic.' },
+  { key: 'tier2',   label: '+T2/16',  tip: 'Tier-2 score out of 16 — tier-1 plus VWAP, MACD crossover, CCI, Williams %R, ROC.' },
+  { key: 'adxScore',label: '+ADX/17', tip: 'ADX-enhanced score out of 17 — tier-2 plus ADX trend-strength (DI+/DI−) when ADX ≥ 20.' },
+  { key: 'obv',     label: '+OBV/18', tip: 'OBV-enhanced score out of 18 — ADX score plus On-Balance Volume momentum.' },
+  { key: 'regime',  label: '+Rgm/19', tip: 'Regime-adjusted score out of 19 — full score including SPY bull/bear regime.' },
 ];
 
 function fmt(n, d = 2) { return n != null ? n.toFixed(d) : '—'; }
@@ -30,7 +32,9 @@ function sortBy(arr, key, dir) {
     let av, bv;
     if (key === 'buyZone') { av = a.buyZone?.price; bv = b.buyZone?.price; }
     else if (key === 'sellZone') { av = a.sellZone?.price; bv = b.sellZone?.price; }
-    else if (key === 'base') { av = a.scores?.base?.score; bv = b.scores?.base?.score; }
+    else if (key === 'core') { av = a.scores?.core?.score; bv = b.scores?.core?.score; }
+    else if (key === 'tier1') { av = a.scores?.tier1?.score; bv = b.scores?.tier1?.score; }
+    else if (key === 'tier2') { av = a.scores?.tier2?.score; bv = b.scores?.tier2?.score; }
     else if (key === 'adxScore') { av = a.scores?.adx?.score; bv = b.scores?.adx?.score; }
     else if (key === 'obv') { av = a.scores?.obv?.score; bv = b.scores?.obv?.score; }
     else if (key === 'regime') { av = a.scores?.regime?.score; bv = b.scores?.regime?.score; }
@@ -49,16 +53,57 @@ function ExpandedRow({ s }) {
   const c = s.components || {};
   return (
     <tr className="bg-gray-950">
-      <td colSpan={12} className="px-4 py-3">
+      <td colSpan={15} className="px-4 py-3">
         <div className="grid grid-cols-2 gap-4 text-xs">
           <div className="space-y-1">
             <div className="text-gray-300 font-semibold mb-1">Moving Averages</div>
-            {[['SMA 20', s.sma20], ['SMA 50', s.sma50], ['SMA 200', s.sma200]].map(([l, v]) => (
+            {[['SMA 20', s.sma20], ['SMA 50', s.sma50], ['SMA 200', s.sma200],
+              ['EMA 9', s.ema9], ['EMA 21', s.ema21]].map(([l, v]) => (
               <div key={l} className="flex justify-between">
                 <span className="text-gray-300">{l}</span>
                 <span className="mono text-gray-200">{fmt(v)}</span>
               </div>
             ))}
+            <div className="flex justify-between">
+              <span className="text-gray-300">Bollinger %B</span>
+              <span className="mono text-gray-200">{s.percentB != null ? fmt(s.percentB * 100, 0) + '%' : '—'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-300">52W Range</span>
+              <span className="mono text-gray-200">{s.range52Pct != null ? fmt(s.range52Pct * 100, 0) + '%' : '—'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-300">RVOL (20d)</span>
+              <span className="mono text-gray-200">{s.rvol != null ? fmt(s.rvol) + '×' : '—'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-300">Stoch %K / %D</span>
+              <span className="mono text-gray-200">
+                {s.stochK != null ? `${fmt(s.stochK, 0)} / ${fmt(s.stochD, 0)}` : '—'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-300">VWAP (60d)</span>
+              <span className="mono text-gray-200">{fmt(s.vwap)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-300">CCI (20)</span>
+              <span className={`mono ${s.cci != null && s.cci < -100 ? 'text-green-400' : s.cci > 100 ? 'text-red-400' : 'text-gray-200'}`}>
+                {s.cci != null ? fmt(s.cci, 0) : '—'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-300">Williams %R</span>
+              <span className={`mono ${s.williamsR != null && s.williamsR < -80 ? 'text-green-400' : s.williamsR > -20 ? 'text-red-400' : 'text-gray-200'}`}>
+                {s.williamsR != null ? fmt(s.williamsR, 0) : '—'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-300">ROC (10d)</span>
+              <span className={`mono ${s.roc != null && s.roc > 2 ? 'text-green-400' : s.roc < -2 ? 'text-red-400' : 'text-gray-200'}`}>
+                {s.roc != null ? fmt(s.roc, 1) + '%' : '—'}
+              </span>
+            </div>
             <div className="flex justify-between">
               <span className="text-gray-300">52W High</span>
               <span className="mono text-gray-200">{fmt(s.year52High)}</span>
@@ -85,6 +130,16 @@ function ExpandedRow({ s }) {
               ['vs SMA 20',        c.vsSma20Sig],
               ['vs SMA 50',        c.vsSma50Sig],
               ['SMA 50/200 trend', c.smaTrendSig],
+              ['Bollinger %B',     c.bbSig],
+              ['52W range',        c.range52Sig],
+              ['RVOL surge',       c.rvolSig],
+              ['EMA 9/21 trend',   c.emaTrendSig],
+              ['Stochastic',       c.stochSig],
+              ['vs VWAP (60d)',    c.vwapSig],
+              ['MACD crossover',   c.macdCrossSig],
+              ['CCI (20)',         c.cciSig],
+              ['Williams %R',      c.williamsSig],
+              ['ROC (10d)',        c.rocSig],
               ['ADX (DI±)',        c.adxSig],
               ['OBV',              c.obvSig],
               ['SPY regime',       c.regimeSig],
@@ -221,7 +276,7 @@ export default function SignalsView() {
                   <td className={`px-2 py-2 mono ${s.rr >= 2 ? 'text-green-400' : 'text-gray-300'}`}>
                     {s.rr != null ? fmt(s.rr) : '—'}
                   </td>
-                  {['base', 'adx', 'obv', 'regime'].map(k => {
+                  {['core', 'tier1', 'tier2', 'adx', 'obv', 'regime'].map(k => {
                     const sc = s.scores?.[k];
                     return (
                       <td key={k} className="px-2 py-2 min-w-[80px]">

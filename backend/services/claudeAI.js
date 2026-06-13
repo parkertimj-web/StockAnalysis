@@ -26,7 +26,7 @@ Data:
 - Target: ${signalData.sellZone?.label} at $${signalData.sellZone?.price?.toFixed(2)}
 - Stop loss: $${signalData.stopLoss?.toFixed(2)}
 - R:R ratio: ${signalData.rr?.toFixed(2)}
-- Signal scores: Base ${signalData.scores?.base?.score}/${signalData.scores?.base?.max} (${signalData.scores?.base?.signal}), Regime ${signalData.scores?.regime?.score}/${signalData.scores?.regime?.max} (${signalData.scores?.regime?.signal})
+- Signal scores: Core ${signalData.scores?.core?.score}/${signalData.scores?.core?.max} (${signalData.scores?.core?.signal}), Tier-2 ${signalData.scores?.tier2?.score}/${signalData.scores?.tier2?.max} (${signalData.scores?.tier2?.signal}), Regime ${signalData.scores?.regime?.score}/${signalData.scores?.regime?.max} (${signalData.scores?.regime?.signal})
 - SPY regime: ${signalData.spyRegime}`;
 
   const msg = await getClient().messages.create({

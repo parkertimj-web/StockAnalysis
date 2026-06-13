@@ -245,6 +245,59 @@ function calculateOBVSeries(candles) {
   return result;
 }
 
+function calculateStochastic(candles, kPeriod = 14, dPeriod = 3) {
+  if (candles.length < kPeriod + dPeriod - 1) return null;
+
+  const kValues = [];
+  for (let i = kPeriod - 1; i < candles.length; i++) {
+    const slice = candles.slice(i - kPeriod + 1, i + 1);
+    const highest = Math.max(...slice.map(c => c.high));
+    const lowest = Math.min(...slice.map(c => c.low));
+    const close = candles[i].close;
+    const k = highest === lowest ? 50 : ((close - lowest) / (highest - lowest)) * 100;
+    kValues.push(k);
+  }
+
+  if (kValues.length < dPeriod) return null;
+  const k = kValues[kValues.length - 1];
+  const d = kValues.slice(-dPeriod).reduce((a, b) => a + b, 0) / dPeriod;
+  return { k, d };
+}
+
+function calculateAvgVolume(candles, period = 20) {
+  if (candles.length < period) return null;
+  const vols = candles.slice(-period).map(c => c.volume || 0);
+  return vols.reduce((a, b) => a + b, 0) / period;
+}
+
+function calculateCCI(candles, period = 20) {
+  if (candles.length < period) return null;
+  const slice = candles.slice(-period);
+  const typicalPrices = slice.map(c => (c.high + c.low + c.close) / 3);
+  const tp = typicalPrices[typicalPrices.length - 1];
+  const smaTP = typicalPrices.reduce((a, b) => a + b, 0) / period;
+  const meanDev = typicalPrices.reduce((a, b) => a + Math.abs(b - smaTP), 0) / period;
+  if (meanDev === 0) return 0;
+  return (tp - smaTP) / (0.015 * meanDev);
+}
+
+function calculateWilliamsR(candles, period = 14) {
+  if (candles.length < period) return null;
+  const slice = candles.slice(-period);
+  const highest = Math.max(...slice.map(c => c.high));
+  const lowest = Math.min(...slice.map(c => c.low));
+  const close = candles[candles.length - 1].close;
+  if (highest === lowest) return -50;
+  return ((highest - close) / (highest - lowest)) * -100;
+}
+
+function calculateROC(closes, period = 10) {
+  if (closes.length < period + 1) return null;
+  const prev = closes[closes.length - 1 - period];
+  if (!prev) return null;
+  return ((closes[closes.length - 1] - prev) / prev) * 100;
+}
+
 function findSwingLows(candles, lookback = 5) {
   const swings = [];
   for (let i = lookback; i < candles.length - lookback; i++) {
@@ -282,6 +335,11 @@ module.exports = {
   calculateVWAPArray,
   calculateBollingerBands,
   calculateBollingerBandsArray,
+  calculateStochastic,
+  calculateAvgVolume,
+  calculateCCI,
+  calculateWilliamsR,
+  calculateROC,
   calculateATR,
   calculateADXSeries,
   calculateOBVSeries,

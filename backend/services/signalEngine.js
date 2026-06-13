@@ -8,9 +8,23 @@ const {
   calculateATR,
   calculateADXSeries,
   calculateOBVSeries,
+  calculateBollingerBands,
+  calculateStochastic,
+  calculateAvgVolume,
+  calculateVWAP,
+  calculateCCI,
+  calculateWilliamsR,
+  calculateROC,
   findSwingLows,
   findSwingHighs,
 } = require('./indicators');
+
+const CORE_MAX = 6;
+const TIER1_MAX = CORE_MAX + 5;
+const TIER2_MAX = TIER1_MAX + 5;
+const ADX_MAX = TIER2_MAX + 1;
+const OBV_MAX = ADX_MAX + 1;
+const REGIME_MAX = OBV_MAX + 1;
 
 function scoreSignal(score, max) {
   const pct = score / max;
@@ -70,11 +84,37 @@ function analyseCandles(symbol, candles, spyCandles = null) {
     if (obvTrend === 1 && priceTrend === -1) obvSig = 1;
   }
 
+  // EMA 9/21 (short-term trend)
+  const ema9Arr = calculateEMAArray(closes, 9);
+  const ema21Arr = calculateEMAArray(closes, 21);
+  const ema9 = ema9Arr[ema9Arr.length - 1];
+  const ema21 = ema21Arr[ema21Arr.length - 1];
+
+  // Bollinger %B
+  const bb = calculateBollingerBands(closes, 20, 2);
+  const percentB = bb && bb.upper !== bb.lower
+    ? (price - bb.lower) / (bb.upper - bb.lower)
+    : null;
+
+  // Stochastic
+  const stoch = calculateStochastic(candles, 14, 3);
+
+  // Relative volume vs 20-day average
+  const avgVol20 = calculateAvgVolume(candles, 20);
+  const lastVol = candles[candles.length - 1].volume || 0;
+  const rvol = avgVol20 > 0 ? lastVol / avgVol20 : null;
+  const priceChange = closes.length >= 2
+    ? closes[closes.length - 1] - closes[closes.length - 2]
+    : 0;
+
   // 52W High/Low
   const lookback = Math.min(252, candles.length);
   const recentCandles = candles.slice(-lookback);
   const year52High = Math.max(...recentCandles.map(c => c.high));
   const year52Low = Math.min(...recentCandles.map(c => c.low));
+  const range52Pct = year52High > year52Low
+    ? (price - year52Low) / (year52High - year52Low)
+    : null;
 
   // SPY regime
   let spyRegime = 'neutral';
@@ -117,23 +157,76 @@ function analyseCandles(symbol, candles, spyCandles = null) {
 
   const regimeSig = spyRegime === 'bull' ? 1 : spyRegime === 'bear' ? -1 : 0;
 
+  // Tier 1 component signals
+  const bbSig = percentB !== null
+    ? (percentB < 0.2 ? 1 : percentB > 0.8 ? -1 : 0)
+    : 0;
+
+  const range52Sig = range52Pct !== null
+    ? (range52Pct < 0.15 ? 1 : range52Pct > 0.85 ? -1 : 0)
+    : 0;
+
+  const rvolSig = rvol !== null && rvol >= 1.5
+    ? (priceChange > 0 ? 1 : priceChange < 0 ? -1 : 0)
+    : 0;
+
+  const emaTrendSig = ema9 !== null && ema21 !== null
+    ? (ema9 > ema21 ? 1 : -1)
+    : 0;
+
+  const stochSig = stoch
+    ? (stoch.k < 20 ? 1 : stoch.k > 80 ? -1 : 0)
+    : 0;
+
+  // Tier 2 component signals
+  const vwap = calculateVWAP(candles.slice(-60));
+  const cci = calculateCCI(candles, 20);
+  const williamsR = calculateWilliamsR(candles, 14);
+  const roc = calculateROC(closes, 10);
+
+  const vwapSig = vwap !== null
+    ? (price > vwap ? 1 : price < vwap ? -1 : 0)
+    : 0;
+
+  const macdCrossSig = macd
+    ? (macd.crossover ? 1 : macd.crossunder ? -1 : 0)
+    : 0;
+
+  const cciSig = cci !== null
+    ? (cci < -100 ? 1 : cci > 100 ? -1 : 0)
+    : 0;
+
+  const williamsSig = williamsR !== null
+    ? (williamsR < -80 ? 1 : williamsR > -20 ? -1 : 0)
+    : 0;
+
+  const rocSig = roc !== null
+    ? (roc > 2 ? 1 : roc < -2 ? -1 : 0)
+    : 0;
+
   const components = {
     rsiSig, macdDirSig, macdMomSig,
     vsSma20Sig, vsSma50Sig, smaTrendSig,
+    bbSig, range52Sig, rvolSig, emaTrendSig, stochSig,
+    vwapSig, macdCrossSig, cciSig, williamsSig, rocSig,
     adxSig, obvSig, regimeSig,
   };
 
-  // Progressive scoring
-  const base = rsiSig + macdDirSig + macdMomSig + vsSma20Sig + vsSma50Sig + smaTrendSig;
-  const adxScore = base + adxSig;
+  // Progressive scoring: core → tier1 → tier2 → adx → obv → regime
+  const core = rsiSig + macdDirSig + macdMomSig + vsSma20Sig + vsSma50Sig + smaTrendSig;
+  const tier1 = core + bbSig + range52Sig + rvolSig + emaTrendSig + stochSig;
+  const tier2 = tier1 + vwapSig + macdCrossSig + cciSig + williamsSig + rocSig;
+  const adxScore = tier2 + adxSig;
   const obvScore = adxScore + obvSig;
   const regimeScore = obvScore + regimeSig;
 
   const scores = {
-    base:   { score: base,        max: 6, signal: scoreSignal(base, 6) },
-    adx:    { score: adxScore,    max: 7, signal: scoreSignal(adxScore, 7) },
-    obv:    { score: obvScore,    max: 8, signal: scoreSignal(obvScore, 8) },
-    regime: { score: regimeScore, max: 9, signal: scoreSignal(regimeScore, 9) },
+    core:   { score: core,        max: CORE_MAX,   signal: scoreSignal(core, CORE_MAX) },
+    tier1:  { score: tier1,       max: TIER1_MAX,  signal: scoreSignal(tier1, TIER1_MAX) },
+    tier2:  { score: tier2,       max: TIER2_MAX,  signal: scoreSignal(tier2, TIER2_MAX) },
+    adx:    { score: adxScore,    max: ADX_MAX,    signal: scoreSignal(adxScore, ADX_MAX) },
+    obv:    { score: obvScore,    max: OBV_MAX,    signal: scoreSignal(obvScore, OBV_MAX) },
+    regime: { score: regimeScore, max: REGIME_MAX, signal: scoreSignal(regimeScore, REGIME_MAX) },
   };
 
   // Buy/Sell zones
@@ -190,7 +283,17 @@ function analyseCandles(symbol, candles, spyCandles = null) {
     symbol,
     price,
     sma20, sma50, sma200,
+    ema9, ema21,
     rsi,
+    percentB,
+    range52Pct,
+    rvol,
+    stochK: stoch?.k ?? null,
+    stochD: stoch?.d ?? null,
+    vwap,
+    cci,
+    williamsR,
+    roc,
     adx, diPlus, diMinus,
     year52High, year52Low,
     buyZone,
