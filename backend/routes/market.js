@@ -2,7 +2,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { getHistory, getQuotes, getStooqQuote } = require('../services/yahooFinance');
+const { getHistory, getQuotes, getLiveQuote } = require('../services/yahooFinance');
 const { getFundamentalsBatch, getMovingAvgBatch } = require('../services/secEdgar');
 const {
   calculateSMAArray,
@@ -28,7 +28,7 @@ router.get('/indicators', async (req, res) => {
     // Fetch history + live quote in parallel (live quote has 90s cache during market hours)
     const [{ candles, meta }, liveQuote] = await Promise.all([
       getHistory(symbol.toUpperCase(), fetchStart, now, interval),
-      getStooqQuote(symbol.toUpperCase()).catch(() => null),
+      getLiveQuote(symbol.toUpperCase()).catch(() => null),
     ]);
     if (!candles.length) return res.status(404).json({ error: 'No data' });
 
@@ -62,14 +62,14 @@ router.get('/indicators', async (req, res) => {
     const trimVwap   = slice(vwapArr);
     const trimBB     = slice(bbArr);
 
-    // Build quote: live price from Stooq real-time endpoint, prev close from last historical bar
+    // Build quote: live price from CBOE delayed quote, prev close from last historical bar
     const lastCandle = trimCandles[trimCandles.length - 1];
     const prevCandle = trimCandles[trimCandles.length - 2];
 
     // liveQuote.price = current session price (updates ~15 min delayed during market hours)
     // meta.regularMarketPrice = last historical daily close = previous close
     const regularMarketPrice = liveQuote?.price ?? meta.regularMarketPrice;
-    const previousClose      = meta.regularMarketPrice; // last Stooq daily bar = yesterday's close
+    const previousClose      = liveQuote?.prevClose ?? meta.regularMarketPrice; // last daily bar close as fallback
 
     const quote = {
       regularMarketPrice,
@@ -133,10 +133,10 @@ router.get('/fundamentals', async (req, res) => {
 
     const pricePromise = (async () => {
       try {
-        // Stooq is faster; fetch all symbols in parallel with 5s race
+        // Fetch all symbols in parallel with 5s race
         await Promise.all(symArr.map(async s => {
           try {
-            const q = await getStooqQuote(s);
+            const q = await getLiveQuote(s);
             if (q?.price != null) priceMap[s] = q.price;
           } catch { /* ignore individual failures */ }
         }));

@@ -13,7 +13,7 @@ const {
   calculateAvgVolume,
   calculateVWAP,
   calculateCCI,
-  calculateWilliamsR,
+  calculateMFI,
   calculateROC,
   findSwingLows,
   findSwingHighs,
@@ -181,7 +181,7 @@ function analyseCandles(symbol, candles, spyCandles = null) {
   // Tier 2 component signals
   const vwap = calculateVWAP(candles.slice(-60));
   const cci = calculateCCI(candles, 20);
-  const williamsR = calculateWilliamsR(candles, 14);
+  const mfi = calculateMFI(candles, 14);
   const roc = calculateROC(closes, 10);
 
   const vwapSig = vwap !== null
@@ -196,8 +196,8 @@ function analyseCandles(symbol, candles, spyCandles = null) {
     ? (cci < -100 ? 1 : cci > 100 ? -1 : 0)
     : 0;
 
-  const williamsSig = williamsR !== null
-    ? (williamsR < -80 ? 1 : williamsR > -20 ? -1 : 0)
+  const mfiSig = mfi !== null
+    ? (mfi < 20 ? 1 : mfi > 80 ? -1 : 0)
     : 0;
 
   const rocSig = roc !== null
@@ -208,14 +208,14 @@ function analyseCandles(symbol, candles, spyCandles = null) {
     rsiSig, macdDirSig, macdMomSig,
     vsSma20Sig, vsSma50Sig, smaTrendSig,
     bbSig, range52Sig, rvolSig, emaTrendSig, stochSig,
-    vwapSig, macdCrossSig, cciSig, williamsSig, rocSig,
+    vwapSig, macdCrossSig, cciSig, mfiSig, rocSig,
     adxSig, obvSig, regimeSig,
   };
 
   // Progressive scoring: core → tier1 → tier2 → adx → obv → regime
   const core = rsiSig + macdDirSig + macdMomSig + vsSma20Sig + vsSma50Sig + smaTrendSig;
   const tier1 = core + bbSig + range52Sig + rvolSig + emaTrendSig + stochSig;
-  const tier2 = tier1 + vwapSig + macdCrossSig + cciSig + williamsSig + rocSig;
+  const tier2 = tier1 + vwapSig + macdCrossSig + cciSig + mfiSig + rocSig;
   const adxScore = tier2 + adxSig;
   const obvScore = adxScore + obvSig;
   const regimeScore = obvScore + regimeSig;
@@ -292,7 +292,7 @@ function analyseCandles(symbol, candles, spyCandles = null) {
     stochD: stoch?.d ?? null,
     vwap,
     cci,
-    williamsR,
+    mfi,
     roc,
     adx, diPlus, diMinus,
     year52High, year52Low,

@@ -3,7 +3,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
-const { getHistory, getStooqQuote } = require('../services/yahooFinance');
+const { getHistory, getLiveQuote } = require('../services/yahooFinance');
 const { analyseCandles } = require('../services/signalEngine');
 const { summariseSignal } = require('../services/claudeAI');
 
@@ -54,7 +54,7 @@ router.get('/watchlist', async (req, res) => {
 
         // Overlay live delayed quote price (updates intraday, unlike EOD daily bars)
         try {
-          const lq = await getStooqQuote(sym);
+          const lq = await getLiveQuote(sym);
           if (lq?.price) {
             signal.price     = lq.price;
             signal.dayHigh   = lq.high;
@@ -62,7 +62,7 @@ router.get('/watchlist', async (req, res) => {
             signal.dayOpen   = lq.open;
             signal.volume    = lq.volume;
             signal.quoteTime = lq.time;
-            const base       = prevClose ?? lq.open;
+            const base       = lq.prevClose ?? prevClose ?? lq.open;
             signal.change    = lq.price - base;
             signal.changePct = base ? ((lq.price - base) / base) * 100 : 0;
           }

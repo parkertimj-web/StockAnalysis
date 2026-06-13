@@ -1,7 +1,7 @@
 /**
  * Market data service.
  * Historical OHLCV  → TwelveData free API (set TWELVEDATA_API_KEY in .env)
- * Live current price → Stooq /q/l/ real-time quote (no auth needed)
+ * Live current price → CBOE delayed quote (no auth needed)
  * Options           → CBOE delayed quotes (no auth needed)
  */
 const axios = require('axios');
@@ -20,30 +20,34 @@ function cacheSet(key, data, ttlMs) {
   cache.set(key, { data, exp: Date.now() + ttlMs });
 }
 
+function isMarketHours() {
+  const etMs = Date.now() - (4 * 3600 * 1000); // rough UTC-4 (EDT)
+  const et   = new Date(etMs);
+  const mins = et.getUTCHours() * 60 + et.getUTCMinutes();
+  const isWeekday = et.getUTCDay() >= 1 && et.getUTCDay() <= 5;
+  return isWeekday && mins >= 9 * 60 + 30 && mins < 16 * 60;
+}
+
 // TwelveData free tier: 8 req/min, 800 req/day.
 // Cache aggressively to stay well within limits.
 // History TTL: 15 min during market hours, 60 min outside.
 function historyTTL() {
-  const now  = new Date();
-  const day  = now.getUTCDay();
-  const etMs = now.getTime() - (4 * 3600 * 1000); // rough UTC-4 (EDT)
-  const et   = new Date(etMs);
-  const mins = et.getUTCHours() * 60 + et.getUTCMinutes();
-  const isWeekday = day >= 1 && day <= 5;
-  const isMarketHours = mins >= 9 * 60 + 30 && mins < 16 * 60;
-  return isWeekday && isMarketHours
+  return isMarketHours()
     ? 15 * 60 * 1000   // 15 min during market hours
     : 60 * 60 * 1000;  // 60 min outside market hours
+}
+
+// Live quote TTL: short during market hours so intraday prices stay fresh.
+function quoteTTL() {
+  return isMarketHours()
+    ? 90 * 1000        // 90 s during market hours
+    : 15 * 60 * 1000;  // 15 min outside market hours
 }
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // ── TwelveData interval mapping ───────────────────────────────────────────────
 const TD_INTERVAL = { '1d': '1day', '1wk': '1week', '1mo': '1month' };
-
-function toStooqSymbol(symbol) {
-  return symbol.toLowerCase().replace('^', '') + '.us';
-}
 
 // ── TwelveData history fetch ──────────────────────────────────────────────────
 async function fetchTwelveData(symbol, interval, fromUnix) {
@@ -144,52 +148,47 @@ async function getQuotes(symbols) {
         fiftyTwoWeekLow:            meta.fiftyTwoWeekLow,
       });
     } catch (e) {
-      console.error(`[Stooq] quote ${sym}:`, e.message);
+      console.error(`[Quotes] ${sym}:`, e.message);
     }
   }
   return results;
 }
 
-// ── Live delayed quote via Stooq quote endpoint ───────────────────────────────
-// /q/l/?s={sym}.us&f=sd2t2ohlcv&h&e=csv  → returns current session data
-// updated throughout the trading day (~15 min delayed), unlike daily bars
-async function getStooqQuote(symbol) {
-  const sym = toStooqSymbol(symbol);
+// ── Live delayed quote via CBOE (same source as options, no auth) ─────────────
+// https://cdn.cboe.com/api/global/delayed_quotes/quotes/{SYMBOL}.json
+// Updated throughout the trading day (~15 min delayed), unlike daily bars.
+async function getLiveQuote(symbol) {
+  const sym = symbol.toUpperCase();
   const key = `liveq:${sym}`;
   const cached = cacheGet(key);
   if (cached) return cached;
 
   try {
-    const res = await axios.get('https://stooq.com/q/l/', {
-      params: { s: sym, f: 'sd2t2ohlcv', h: '', e: 'csv' },
-      headers: { 'User-Agent': UA, 'Accept': 'text/plain' },
-      timeout: 10000,
-      responseType: 'text',
-    });
+    const res = await axios.get(
+      `https://cdn.cboe.com/api/global/delayed_quotes/quotes/${encodeURIComponent(sym)}.json`,
+      { headers: { 'User-Agent': UA, 'Accept': 'application/json' }, timeout: 10000 }
+    );
 
-    const lines = res.data.trim().split('\n');
-    if (lines.length < 2) return null;
-    // Header row: Symbol,Date,Time,Open,High,Low,Close,Volume
-    const parts = lines[1].split(',');
-    if (parts.length < 8) return null;
-    const [, date, time, open, high, low, close, volume] = parts;
-    const price = parseFloat(close);
-    if (!price || isNaN(price)) return null;
+    const d = res.data?.data;
+    const price = d?.current_price;
+    if (price == null || isNaN(price)) return null;
 
+    const [date, time] = String(d.last_trade_time || '').split('T');
     const quote = {
       price,
-      open:   parseFloat(open),
-      high:   parseFloat(high),
-      low:    parseFloat(low),
-      volume: parseInt(volume) || 0,
-      date:   date?.trim(),
-      time:   time?.trim(),
+      open:      d.open ?? null,
+      high:      d.high ?? null,
+      low:       d.low ?? null,
+      volume:    d.volume ?? 0,
+      prevClose: d.prev_day_close ?? null,
+      date:      date || null,
+      time:      time || null,
       updatedAt: Date.now(),
     };
-    cacheSet(key, quote, historyTTL()); // 90s market hours, 15min outside
+    cacheSet(key, quote, quoteTTL()); // 90s market hours, 15min outside
     return quote;
   } catch (e) {
-    console.error(`[Stooq quote] ${symbol}:`, e.message);
+    console.error(`[Live quote] ${symbol}:`, e.message);
     return null;
   }
 }
@@ -420,4 +419,4 @@ async function getFundamentalsBatch(symbols) {
   return results;
 }
 
-module.exports = { getQuotes, getHistory, getOptions, getStooqQuote, getFundamentalsBatch };
+module.exports = { getQuotes, getHistory, getOptions, getLiveQuote, getFundamentalsBatch };

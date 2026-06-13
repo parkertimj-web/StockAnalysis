@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { Fragment, useState, useCallback } from 'react';
 import { ChevronDown, ChevronUp, ChevronRight } from 'lucide-react';
 import api from '../api/client.js';
 import SignalBadge, { ScoreBar } from '../components/common/SignalBadge.jsx';
@@ -19,7 +19,7 @@ const COLS = [
   { key: 'rr',      label: 'R:R',     tip: 'Risk-to-Reward ratio — potential gain ÷ potential loss. ≥2 is favorable.' },
   { key: 'core',    label: 'Core/6',  tip: 'Core score out of 6: RSI, MACD direction & momentum, price vs SMA 20/50, SMA 50/200 trend.' },
   { key: 'tier1',   label: '+T1/11',  tip: 'Tier-1 score out of 11 — core plus Bollinger %B, 52W range, RVOL, EMA 9/21, Stochastic.' },
-  { key: 'tier2',   label: '+T2/16',  tip: 'Tier-2 score out of 16 — tier-1 plus VWAP, MACD crossover, CCI, Williams %R, ROC.' },
+  { key: 'tier2',   label: '+T2/16',  tip: 'Tier-2 score out of 16 — tier-1 plus VWAP, MACD crossover, CCI, MFI, ROC.' },
   { key: 'adxScore',label: '+ADX/17', tip: 'ADX-enhanced score out of 17 — tier-2 plus ADX trend-strength (DI+/DI−) when ADX ≥ 20.' },
   { key: 'obv',     label: '+OBV/18', tip: 'OBV-enhanced score out of 18 — ADX score plus On-Balance Volume momentum.' },
   { key: 'regime',  label: '+Rgm/19', tip: 'Regime-adjusted score out of 19 — full score including SPY bull/bear regime.' },
@@ -93,9 +93,9 @@ function ExpandedRow({ s }) {
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-300">Williams %R</span>
-              <span className={`mono ${s.williamsR != null && s.williamsR < -80 ? 'text-green-400' : s.williamsR > -20 ? 'text-red-400' : 'text-gray-200'}`}>
-                {s.williamsR != null ? fmt(s.williamsR, 0) : '—'}
+              <span className="text-gray-300">MFI (14)</span>
+              <span className={`mono ${s.mfi != null && s.mfi < 20 ? 'text-green-400' : s.mfi > 80 ? 'text-red-400' : 'text-gray-200'}`}>
+                {s.mfi != null ? fmt(s.mfi, 0) : '—'}
               </span>
             </div>
             <div className="flex justify-between">
@@ -138,7 +138,7 @@ function ExpandedRow({ s }) {
               ['vs VWAP (60d)',    c.vwapSig],
               ['MACD crossover',   c.macdCrossSig],
               ['CCI (20)',         c.cciSig],
-              ['Williams %R',      c.williamsSig],
+              ['MFI (14)',         c.mfiSig],
               ['ROC (10d)',        c.rocSig],
               ['ADX (DI±)',        c.adxSig],
               ['OBV',              c.obvSig],
@@ -242,9 +242,8 @@ export default function SignalsView() {
           </thead>
           <tbody>
             {sorted.map(s => (
-              <>
+              <Fragment key={s.symbol}>
                 <tr
-                  key={s.symbol}
                   onClick={() => toggleExpand(s.symbol)}
                   className="border-b border-gray-800/50 hover:bg-gray-800/30 cursor-pointer"
                 >
@@ -290,8 +289,8 @@ export default function SignalsView() {
                     );
                   })}
                 </tr>
-                {expanded.has(s.symbol) && <ExpandedRow key={`${s.symbol}-exp`} s={s} />}
-              </>
+                {expanded.has(s.symbol) && <ExpandedRow s={s} />}
+              </Fragment>
             ))}
           </tbody>
         </table>

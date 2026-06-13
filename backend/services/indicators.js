@@ -246,14 +246,17 @@ function calculateOBVSeries(candles) {
 }
 
 function calculateStochastic(candles, kPeriod = 14, dPeriod = 3) {
-  if (candles.length < kPeriod + dPeriod - 1) return null;
+  const needed = kPeriod + dPeriod - 1;
+  if (candles.length < needed) return null;
 
+  // Only the last dPeriod %K values matter — no need to scan full history
+  const recent = candles.slice(-needed);
   const kValues = [];
-  for (let i = kPeriod - 1; i < candles.length; i++) {
-    const slice = candles.slice(i - kPeriod + 1, i + 1);
+  for (let i = kPeriod - 1; i < recent.length; i++) {
+    const slice = recent.slice(i - kPeriod + 1, i + 1);
     const highest = Math.max(...slice.map(c => c.high));
     const lowest = Math.min(...slice.map(c => c.low));
-    const close = candles[i].close;
+    const close = recent[i].close;
     const k = highest === lowest ? 50 : ((close - lowest) / (highest - lowest)) * 100;
     kValues.push(k);
   }
@@ -281,14 +284,22 @@ function calculateCCI(candles, period = 20) {
   return (tp - smaTP) / (0.015 * meanDev);
 }
 
-function calculateWilliamsR(candles, period = 14) {
-  if (candles.length < period) return null;
-  const slice = candles.slice(-period);
-  const highest = Math.max(...slice.map(c => c.high));
-  const lowest = Math.min(...slice.map(c => c.low));
-  const close = candles[candles.length - 1].close;
-  if (highest === lowest) return -50;
-  return ((highest - close) / (highest - lowest)) * -100;
+function calculateMFI(candles, period = 14) {
+  if (candles.length < period + 1) return null;
+  // Need period+1 bars: each flow compares typical price to the prior bar's
+  const slice = candles.slice(-(period + 1));
+  let posFlow = 0, negFlow = 0;
+  let prevTP = (slice[0].high + slice[0].low + slice[0].close) / 3;
+  for (let i = 1; i < slice.length; i++) {
+    const tp = (slice[i].high + slice[i].low + slice[i].close) / 3;
+    const flow = tp * (slice[i].volume || 0);
+    if (tp > prevTP) posFlow += flow;
+    else if (tp < prevTP) negFlow += flow;
+    prevTP = tp;
+  }
+  if (posFlow + negFlow === 0) return null; // no volume data
+  if (negFlow === 0) return 100;
+  return 100 - 100 / (1 + posFlow / negFlow);
 }
 
 function calculateROC(closes, period = 10) {
@@ -338,7 +349,7 @@ module.exports = {
   calculateStochastic,
   calculateAvgVolume,
   calculateCCI,
-  calculateWilliamsR,
+  calculateMFI,
   calculateROC,
   calculateATR,
   calculateADXSeries,
