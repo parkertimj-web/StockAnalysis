@@ -4,6 +4,7 @@ import { createChart, CandlestickSeries, LineSeries } from 'lightweight-charts';
 import api from '../api/client.js';
 import useStore from '../store/store.js';
 import LiveBadge from '../components/common/LiveBadge.jsx';
+import ErrorBoundary from '../components/common/ErrorBoundary.jsx';
 import { useAutoRefresh } from '../hooks/useAutoRefresh.js';
 
 const REFRESH_MS = 5 * 60_000; // 5 min
@@ -208,12 +209,13 @@ export default function WatchlistChartsView() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
         {watchlist.map(({ symbol }) => (
-          <MiniChart
-            key={symbol}
-            symbol={symbol}
-            data={chartData[symbol]}
-            fetchedAt={fetchTimes[symbol]}
-          />
+          <ErrorBoundary key={symbol} label={`${symbol} chart failed`}>
+            <MiniChart
+              symbol={symbol}
+              data={chartData[symbol]}
+              fetchedAt={fetchTimes[symbol]}
+            />
+          </ErrorBoundary>
         ))}
       </div>
 

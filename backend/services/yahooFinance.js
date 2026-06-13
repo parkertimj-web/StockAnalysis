@@ -79,10 +79,15 @@ async function fetchTwelveData(symbol, interval, fromUnix) {
     low:    parseFloat(v.low),
     close:  parseFloat(v.close),
     volume: parseInt(v.volume) || 0,
-  })).filter(c => !isNaN(c.close));
+  })).filter(c => !isNaN(c.close) && !isNaN(c.time));
+
+  // TwelveData occasionally returns out-of-order or duplicate bars for thinly
+  // traded symbols — charts require strictly ascending unique timestamps
+  candles.sort((a, b) => a.time - b.time);
+  const deduped = candles.filter((c, i) => i === 0 || c.time !== candles[i - 1].time);
 
   // Filter to requested start date
-  const filtered = candles.filter(c => c.time >= fromUnix);
+  const filtered = deduped.filter(c => c.time >= fromUnix);
   if (filtered.length) cacheSet(key, filtered, historyTTL());
   return filtered;
 }
