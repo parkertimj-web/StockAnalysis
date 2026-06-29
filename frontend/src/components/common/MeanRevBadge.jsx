@@ -6,7 +6,9 @@ export const MEAN_REV_TIP =
   'RSI mean reversion — the Backtest strategy applied to today. ' +
   'Buy Setup: RSI < 40 with price above SMA 50 (oversold dip in an uptrend). ' +
   'Oversold: RSI < 40 but below SMA 50 (no trend support). ' +
-  'Take Profit: RSI > 65 (reversion complete).';
+  'Take Profit: RSI > 65 (reversion complete). ' +
+  'B / S are the buy and sell price points — the lower and upper Bollinger ' +
+  'bands (20-day mean ± 2σ); they light up when price reaches them.';
 
 // Client-side computation of the same state the backend signal engine
 // produces — for pages (e.g. Chart) that have RSI + SMA50 but don't call

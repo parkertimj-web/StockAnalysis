@@ -126,6 +126,27 @@ function ExpandedRow({ s }) {
               <span className="text-gray-300">DI−</span>
               <span className="mono text-red-400">{fmt(s.diMinus, 1)}</span>
             </div>
+            {s.meanReversion?.buyPoint != null && (
+              <>
+                <div className="text-gray-300 font-semibold mt-2 mb-1">Mean Reversion</div>
+                <div className="flex justify-between">
+                  <span className="text-gray-300">Buy point (−2σ)</span>
+                  <span className={`mono ${s.meanReversion.at === 'buy' ? 'text-green-400 font-bold' : 'text-gray-200'}`}>
+                    {fmt(s.meanReversion.buyPoint)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-300">Mean (SMA 20)</span>
+                  <span className="mono text-gray-200">{fmt(s.meanReversion.mean)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-300">Sell point (+2σ)</span>
+                  <span className={`mono ${s.meanReversion.at === 'sell' ? 'text-red-400 font-bold' : 'text-gray-200'}`}>
+                    {fmt(s.meanReversion.sellPoint)}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
           <div className="space-y-1">
             <div className="text-gray-300 font-semibold mb-1">Component Votes</div>
@@ -268,7 +289,21 @@ export default function SignalsView() {
                   <td className={`px-2 py-2 mono ${s.rsi < 40 ? 'text-green-400' : s.rsi > 65 ? 'text-red-400' : 'text-gray-300'}`}>
                     {fmt(s.rsi, 1)}
                   </td>
-                  <td className="px-2 py-2"><MeanRevBadge mr={s.meanReversion} /></td>
+                  <td className="px-2 py-2">
+                    <div className="space-y-1">
+                      <MeanRevBadge mr={s.meanReversion} />
+                      {s.meanReversion?.buyPoint != null && (
+                        <div className="flex items-center gap-1.5 text-[9px] mono leading-none">
+                          <span className={s.meanReversion.at === 'buy' ? 'text-green-400 font-bold' : 'text-gray-500'}>
+                            B {fmt(s.meanReversion.buyPoint)}
+                          </span>
+                          <span className={s.meanReversion.at === 'sell' ? 'text-red-400 font-bold' : 'text-gray-500'}>
+                            S {fmt(s.meanReversion.sellPoint)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </td>
                   <td className={`px-2 py-2 mono ${s.adx >= 25 ? 'text-yellow-400' : 'text-gray-300'}`}>
                     {fmt(s.adx, 1)}
                   </td>

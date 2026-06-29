@@ -304,7 +304,18 @@ function analyseCandles(symbol, candles, spyCandles = null) {
     sma20, sma50, sma200,
     ema9, ema21,
     rsi,
-    meanReversion: { ...meanReversionState(rsi, price, sma50), rsi },
+    meanReversion: {
+      ...meanReversionState(rsi, price, sma50),
+      rsi,
+      // Concrete price points: classic mean-reversion buy at the lower
+      // Bollinger band (mean − 2σ), sell at the upper band (mean + 2σ),
+      // reverting toward the 20-day mean. `at` flags which point price
+      // has actually reached right now.
+      buyPoint:  bb ? bb.lower : null,
+      sellPoint: bb ? bb.upper : null,
+      mean:      bb ? bb.middle : null,
+      at: bb ? (price <= bb.lower ? 'buy' : price >= bb.upper ? 'sell' : null) : null,
+    },
     percentB,
     range52Pct,
     rvol,
