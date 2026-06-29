@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Play, ChevronDown, ChevronUp } from 'lucide-react';
+import { Play, ChevronDown, ChevronUp, HelpCircle } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import api from '../api/client.js';
 
@@ -16,6 +16,7 @@ export default function BacktestView() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showTrades, setShowTrades] = useState(false);
+  const [showHelp, setShowHelp] = useState(true);
 
   async function run(e) {
     e.preventDefault();
@@ -37,6 +38,85 @@ export default function BacktestView() {
   return (
     <div className="space-y-4">
       <h1 className="text-sm font-semibold text-gray-200">Backtest</h1>
+
+      {/* Instructions */}
+      <div className="card p-4">
+        <button
+          onClick={() => setShowHelp(v => !v)}
+          className="flex items-center gap-1.5 text-xs font-medium text-gray-200 hover:text-white"
+        >
+          <HelpCircle size={13} className="text-blue-400" />
+          How backtesting works
+          {showHelp ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+        </button>
+
+        {showHelp && (
+          <div className="mt-3 space-y-3 text-xs text-gray-300 leading-relaxed">
+            <div>
+              <div className="text-gray-100 font-semibold mb-1">Why backtest?</div>
+              A backtest replays a fixed set of trading rules against real historical
+              prices, so you can see how the strategy <em>would have</em> performed before
+              risking any money. It answers two questions: does this entry/exit logic have
+              an edge, and which parameters make it stronger? Use it to compare ideas, not
+              to predict the future — markets change and past results never guarantee
+              future ones.
+            </div>
+
+            <div>
+              <div className="text-gray-100 font-semibold mb-1">The strategy tested here</div>
+              This is an <span className="text-gray-100">RSI mean-reversion</span> strategy —
+              it buys oversold dips and sells into strength. It holds one position at a time
+              and walks day-by-day through the chosen period:
+              <ul className="mt-1.5 ml-4 list-disc space-y-1">
+                <li>
+                  <span className="text-green-400 font-medium">Entry</span> — buy when RSI
+                  drops below the <span className="text-gray-100">Oversold</span> level. If
+                  "Require price above SMA" is on, it only buys when price is above its
+                  moving average, so you dip-buy <em>with</em> the longer trend rather than
+                  against it.
+                </li>
+                <li>
+                  <span className="text-red-400 font-medium">Exit</span> — the position
+                  closes on whichever of these happens first each day:
+                  <ul className="mt-1 ml-4 list-[circle] space-y-0.5">
+                    <li><span className="text-gray-100">Stop loss</span>: price falls to entry − (ATR × Stop ×)</li>
+                    <li><span className="text-gray-100">Target</span>: price rises to entry + (ATR × Target ×)</li>
+                    <li><span className="text-gray-100">RSI exit</span>: RSI climbs back above the Overbought level</li>
+                    <li><span className="text-gray-100">End of data</span>: any trade still open at the last bar is closed</li>
+                  </ul>
+                  Stops are checked before targets, so a day that hits both counts as a loss
+                  (the conservative assumption). ATR — Average True Range — sizes the stop and
+                  target to each stock's own volatility instead of a fixed percentage.
+                </li>
+              </ul>
+            </div>
+
+            <div>
+              <div className="text-gray-100 font-semibold mb-1">The parameters</div>
+              <ul className="ml-4 list-disc space-y-1">
+                <li><span className="text-gray-100">Symbol / Period</span> — what to test and how far back (6mo–5y).</li>
+                <li><span className="text-gray-100">RSI Oversold / OB / Period</span> — the buy trigger, sell trigger, and RSI lookback (14 is standard).</li>
+                <li><span className="text-gray-100">SMA Period</span> + checkbox — the trend filter and whether to require it.</li>
+                <li><span className="text-gray-100">ATR Stop × / Target ×</span> — risk and reward as multiples of volatility. Target ÷ Stop is roughly your reward-to-risk ratio (default 4÷2 = 2:1).</li>
+              </ul>
+            </div>
+
+            <div>
+              <div className="text-gray-100 font-semibold mb-1">Reading the results</div>
+              <ul className="ml-4 list-disc space-y-1">
+                <li><span className="text-gray-100">Expectancy</span> is the headline number — the average % return per trade. Positive means the rules had an edge over this period.</li>
+                <li><span className="text-gray-100">Win Rate</span> and <span className="text-gray-100">Total P&L</span> give context: a low win rate can still be profitable if wins are much larger than losses.</li>
+                <li><span className="text-gray-100">Avg Win / Loss</span>, <span className="text-gray-100">Best / Worst</span>, and <span className="text-gray-100">Bars</span> (trading days held) show the shape and duration of trades.</li>
+              </ul>
+            </div>
+
+            <div className="text-gray-400 italic">
+              Note: results assume exact fills at the stop/target price and ignore
+              commissions, slippage, and dividends, so live performance will differ.
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Config form */}
       <div className="card p-4">

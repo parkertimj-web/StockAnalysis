@@ -4,6 +4,7 @@ import api from '../api/client.js';
 import SignalBadge, { ScoreBar } from '../components/common/SignalBadge.jsx';
 import LiveBadge from '../components/common/LiveBadge.jsx';
 import Tip from '../components/common/Tip.jsx';
+import MeanRevBadge, { MEAN_REV_TIP } from '../components/common/MeanRevBadge.jsx';
 import { useAutoRefresh } from '../hooks/useAutoRefresh.js';
 
 const REFRESH_MS = 60_000;
@@ -12,6 +13,7 @@ const COLS = [
   { key: 'symbol',  label: 'Symbol' },
   { key: 'price',   label: 'Price' },
   { key: 'rsi',     label: 'RSI',     tip: 'Relative Strength Index — momentum oscillator 0–100. Above 70 = overbought, below 30 = oversold.' },
+  { key: 'meanRev', label: 'Mean Rev', tip: MEAN_REV_TIP },
   { key: 'adx',     label: 'ADX',     tip: 'Average Directional Index — trend strength. 14+ = trending, 25+ = strong trend.' },
   { key: 'buyZone', label: 'Buy Zone' },
   { key: 'stopLoss',label: 'Stop' },
@@ -27,11 +29,15 @@ const COLS = [
 
 function fmt(n, d = 2) { return n != null ? n.toFixed(d) : '—'; }
 
+// Sort rank: buy setups bubble to the top in the default (desc) order.
+const MR_RANK = { entry: 3, oversold: 2, neutral: 1, overbought: 0 };
+
 function sortBy(arr, key, dir) {
   return [...arr].sort((a, b) => {
     let av, bv;
     if (key === 'buyZone') { av = a.buyZone?.price; bv = b.buyZone?.price; }
     else if (key === 'sellZone') { av = a.sellZone?.price; bv = b.sellZone?.price; }
+    else if (key === 'meanRev') { av = MR_RANK[a.meanReversion?.state]; bv = MR_RANK[b.meanReversion?.state]; }
     else if (key === 'core') { av = a.scores?.core?.score; bv = b.scores?.core?.score; }
     else if (key === 'tier1') { av = a.scores?.tier1?.score; bv = b.scores?.tier1?.score; }
     else if (key === 'tier2') { av = a.scores?.tier2?.score; bv = b.scores?.tier2?.score; }
@@ -53,7 +59,7 @@ function ExpandedRow({ s }) {
   const c = s.components || {};
   return (
     <tr className="bg-gray-950">
-      <td colSpan={15} className="px-4 py-3">
+      <td colSpan={16} className="px-4 py-3">
         <div className="grid grid-cols-2 gap-4 text-xs">
           <div className="space-y-1">
             <div className="text-gray-300 font-semibold mb-1">Moving Averages</div>
@@ -262,6 +268,7 @@ export default function SignalsView() {
                   <td className={`px-2 py-2 mono ${s.rsi < 40 ? 'text-green-400' : s.rsi > 65 ? 'text-red-400' : 'text-gray-300'}`}>
                     {fmt(s.rsi, 1)}
                   </td>
+                  <td className="px-2 py-2"><MeanRevBadge mr={s.meanReversion} /></td>
                   <td className={`px-2 py-2 mono ${s.adx >= 25 ? 'text-yellow-400' : 'text-gray-300'}`}>
                     {fmt(s.adx, 1)}
                   </td>

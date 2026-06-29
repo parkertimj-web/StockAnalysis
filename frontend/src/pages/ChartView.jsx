@@ -5,6 +5,7 @@ import useStore from '../store/store.js';
 import api from '../api/client.js';
 import LiveBadge from '../components/common/LiveBadge.jsx';
 import Tip from '../components/common/Tip.jsx';
+import MeanRevBadge, { MEAN_REV_TIP, meanRevFromValues } from '../components/common/MeanRevBadge.jsx';
 import { useAutoRefresh } from '../hooks/useAutoRefresh.js';
 
 const REFRESH_MS = 5 * 60_000; // 5 min — chart history is heavy
@@ -237,6 +238,17 @@ export default function ChartView() {
   const pricePct     = priceChange != null && prevClose ? (priceChange / prevClose) * 100 : null;
   const priceUp      = priceChange == null ? null : priceChange >= 0;
 
+  // RSI mean-reversion state — computed client-side from latest RSI + SMA50
+  // (Chart fetches /market/indicators, which has both, not /signals).
+  let meanRev = null;
+  if (data?.candles?.length) {
+    const closes = data.candles.map(c => c.close);
+    const rsiArr = computeRSIArray(closes, 14);
+    const lastRsi = [...rsiArr].reverse().find(v => v != null) ?? null;
+    const lastSma50 = [...(data.sma50 || [])].reverse().find(v => v != null) ?? null;
+    meanRev = meanRevFromValues(lastRsi, currentPrice, lastSma50);
+  }
+
   return (
     <div className="space-y-3">
       {/* Controls */}
@@ -306,6 +318,12 @@ export default function ChartView() {
             {prevClose != null && (
               <span className="text-[11px] text-gray-300 ml-1">
                 prev close {fmt(prevClose)}
+              </span>
+            )}
+            {meanRev && (
+              <span className={`flex items-center gap-1 text-[10px] text-gray-300 ${q.liveAt ? '' : 'ml-auto'}`}>
+                Mean Rev<Tip text={MEAN_REV_TIP} below />
+                <MeanRevBadge mr={meanRev} size="xs" />
               </span>
             )}
             {q.liveAt && (

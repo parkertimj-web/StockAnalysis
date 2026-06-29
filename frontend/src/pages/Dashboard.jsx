@@ -6,6 +6,7 @@ import useStore from '../store/store.js';
 import SignalBadge from '../components/common/SignalBadge.jsx';
 import LiveBadge from '../components/common/LiveBadge.jsx';
 import Tip from '../components/common/Tip.jsx';
+import MeanRevBadge, { MEAN_REV_TIP } from '../components/common/MeanRevBadge.jsx';
 import { useAutoRefresh } from '../hooks/useAutoRefresh.js';
 
 const REFRESH_MS = 90_000; // 90 s — matches Stooq quote cache TTL during market hours
@@ -167,6 +168,12 @@ export default function Dashboard() {
                   <div>RSI<Tip text="Relative Strength Index — momentum 0–100. Above 70 = overbought, below 30 = oversold." below /> <span className="text-gray-300 mono">{fmt(s.rsi, 1)}</span></div>
                   <div>ADX<Tip text="Average Directional Index — trend strength. 14+ = trending, 25+ = strong trend." below /> <span className="text-gray-300 mono">{fmt(s.adx, 1)}</span></div>
                   <div>R:R<Tip text="Risk-to-Reward ratio — potential gain ÷ potential loss. ≥2 is favorable." below /> <span className={`mono ${s.rr >= 2 ? 'text-green-400' : 'text-gray-300'}`}>{s.rr != null ? fmt(s.rr) : '—'}</span></div>
+                </div>
+              )}
+              {s?.meanReversion && (
+                <div className="flex items-center gap-1 mt-1.5 text-[10px] text-gray-300">
+                  <span>Mean Rev<Tip text={MEAN_REV_TIP} below /></span>
+                  <MeanRevBadge mr={s.meanReversion} size="xs" />
                 </div>
               )}
               {f && (

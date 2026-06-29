@@ -35,6 +35,25 @@ function scoreSignal(score, max) {
   return 'neutral';
 }
 
+// RSI mean-reversion state — mirrors the Backtest page's strategy:
+// buy an oversold dip while the longer trend is still up, take profit
+// once momentum swings back to overbought.
+//   entry      → RSI < oversold AND price above SMA50 (dip in an uptrend)
+//   oversold   → RSI < oversold but price below SMA50 (oversold, no trend support)
+//   overbought → RSI > overbought (mean reversion complete → take profit)
+//   neutral    → otherwise
+function meanReversionState(rsi, price, sma50, oversold = 40, overbought = 65) {
+  if (rsi == null) return { state: 'neutral', label: 'N/A', aboveSma50: null };
+  const aboveSma50 = sma50 != null ? price > sma50 : null;
+  if (rsi < oversold) {
+    return aboveSma50
+      ? { state: 'entry',    label: 'Buy Setup', aboveSma50 }
+      : { state: 'oversold', label: 'Oversold',  aboveSma50 };
+  }
+  if (rsi > overbought) return { state: 'overbought', label: 'Take Profit', aboveSma50 };
+  return { state: 'neutral', label: 'Neutral', aboveSma50 };
+}
+
 function analyseCandles(symbol, candles, spyCandles = null) {
   if (!candles || candles.length < 50) return null;
 
@@ -285,6 +304,7 @@ function analyseCandles(symbol, candles, spyCandles = null) {
     sma20, sma50, sma200,
     ema9, ema21,
     rsi,
+    meanReversion: { ...meanReversionState(rsi, price, sma50), rsi },
     percentB,
     range52Pct,
     rvol,
