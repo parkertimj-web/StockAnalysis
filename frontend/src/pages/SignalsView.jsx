@@ -12,9 +12,12 @@ const REFRESH_MS = 60_000;
 const COLS = [
   { key: 'symbol',  label: 'Symbol' },
   { key: 'price',   label: 'Price' },
+  { key: 'changePct', label: 'Chg%',  tip: 'Day change vs previous close, from the live delayed quote.' },
   { key: 'rsi',     label: 'RSI',     tip: 'Relative Strength Index — momentum oscillator 0–100. Above 70 = overbought, below 30 = oversold.' },
   { key: 'meanRev', label: 'Mean Rev', tip: MEAN_REV_TIP },
   { key: 'adx',     label: 'ADX',     tip: 'Average Directional Index — trend strength. 14+ = trending, 25+ = strong trend.' },
+  { key: 'trend',   label: 'Trend',   tip: 'Supertrend (10, 3×ATR) — trailing-stop trend indicator. Up = price above the line (line = stop level below); Down = price below it. "flip" is the price where the trend would reverse.' },
+  { key: 'atrPct',  label: 'ATR%',    tip: 'Average True Range (14) as % of price — typical daily move. Higher = more volatile, wider stops needed.' },
   { key: 'buyZone', label: 'Buy Zone' },
   { key: 'stopLoss',label: 'Stop' },
   { key: 'sellZone',label: 'Target' },
@@ -38,6 +41,7 @@ function sortBy(arr, key, dir) {
     if (key === 'buyZone') { av = a.buyZone?.price; bv = b.buyZone?.price; }
     else if (key === 'sellZone') { av = a.sellZone?.price; bv = b.sellZone?.price; }
     else if (key === 'meanRev') { av = MR_RANK[a.meanReversion?.state]; bv = MR_RANK[b.meanReversion?.state]; }
+    else if (key === 'trend') { av = a.supertrend?.direction; bv = b.supertrend?.direction; }
     else if (key === 'core') { av = a.scores?.core?.score; bv = b.scores?.core?.score; }
     else if (key === 'tier1') { av = a.scores?.tier1?.score; bv = b.scores?.tier1?.score; }
     else if (key === 'tier2') { av = a.scores?.tier2?.score; bv = b.scores?.tier2?.score; }
@@ -59,7 +63,7 @@ function ExpandedRow({ s }) {
   const c = s.components || {};
   return (
     <tr className="bg-gray-950">
-      <td colSpan={16} className="px-4 py-3">
+      <td colSpan={COLS.length + 1} className="px-4 py-3">
         <div className="grid grid-cols-2 gap-4 text-xs">
           <div className="space-y-1">
             <div className="text-gray-300 font-semibold mb-1">Moving Averages</div>
@@ -126,6 +130,19 @@ function ExpandedRow({ s }) {
               <span className="text-gray-300">DI−</span>
               <span className="mono text-red-400">{fmt(s.diMinus, 1)}</span>
             </div>
+            <div className="flex justify-between">
+              <span className="text-gray-300">ATR (14)</span>
+              <span className="mono text-gray-200">{fmt(s.atr)}{s.atrPct != null ? ` (${fmt(s.atrPct, 1)}%)` : ''}</span>
+            </div>
+            {s.supertrend && (
+              <div className="flex justify-between">
+                <span className="text-gray-300">Supertrend (10, 3)</span>
+                <span className={`mono ${s.supertrend.direction === 1 ? 'text-green-400' : 'text-red-400'}`}>
+                  {s.supertrend.direction === 1 ? '▲' : '▼'} {fmt(s.supertrend.value)}
+                  {s.supertrend.distPct != null ? ` (${fmt(Math.abs(s.supertrend.distPct), 1)}% away)` : ''}
+                </span>
+              </div>
+            )}
             {s.meanReversion?.buyPoint != null && (
               <>
                 <div className="text-gray-300 font-semibold mt-2 mb-1">Mean Reversion</div>
@@ -220,7 +237,10 @@ export default function SignalsView() {
   }
 
   const sorted = sortBy(signals, sortKey, sortDir);
-  const spy = sorted.find(s => s.symbol === 'SPY');
+  // SPY's own row has spyRegime 'neutral' (it isn't compared to itself) —
+  // read the regime from any other row, falling back to the SPY row.
+  const spyRegime = sorted.find(s => s.symbol !== 'SPY' && s.spyRegime !== 'neutral')?.spyRegime
+    ?? sorted.find(s => s.symbol === 'SPY')?.spyRegime;
 
   function SortIcon({ col }) {
     if (sortKey !== col) return <ChevronRight size={10} className="opacity-20" />;
@@ -232,9 +252,9 @@ export default function SignalsView() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-sm font-semibold text-gray-200">Signals</h1>
-          {spy && (
-            <span className={`text-xs border rounded px-2 py-0.5 ${spy.spyRegime === 'bull' ? 'border-green-600 text-green-400' : 'border-red-600 text-red-400'}`}>
-              SPY {spy.spyRegime === 'bull' ? 'Bull' : 'Bear'} Regime
+          {(spyRegime === 'bull' || spyRegime === 'bear') && (
+            <span className={`text-xs border rounded px-2 py-0.5 ${spyRegime === 'bull' ? 'border-green-600 text-green-400' : 'border-red-600 text-red-400'}`}>
+              SPY {spyRegime === 'bull' ? 'Bull' : 'Bear'} Regime
             </span>
           )}
         </div>
@@ -286,6 +306,9 @@ export default function SignalsView() {
                     )}
                   </td>
                   <td className="px-2 py-2 mono text-gray-200">{fmt(s.price)}</td>
+                  <td className={`px-2 py-2 mono ${s.changePct == null ? 'text-gray-500' : s.changePct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {s.changePct != null ? `${s.changePct >= 0 ? '+' : ''}${fmt(s.changePct)}%` : '—'}
+                  </td>
                   <td className={`px-2 py-2 mono ${s.rsi < 40 ? 'text-green-400' : s.rsi > 65 ? 'text-red-400' : 'text-gray-300'}`}>
                     {fmt(s.rsi, 1)}
                   </td>
@@ -306,6 +329,25 @@ export default function SignalsView() {
                   </td>
                   <td className={`px-2 py-2 mono ${s.adx >= 25 ? 'text-yellow-400' : 'text-gray-300'}`}>
                     {fmt(s.adx, 1)}
+                  </td>
+                  <td className="px-2 py-2">
+                    {s.supertrend ? (
+                      <div className="space-y-0.5">
+                        <span className={`inline-block border rounded px-1.5 py-0.5 text-[9px] font-medium whitespace-nowrap ${
+                          s.supertrend.direction === 1
+                            ? 'border-green-600 text-green-400 bg-green-500/10'
+                            : 'border-red-600 text-red-400 bg-red-500/10'
+                        }`}>
+                          {s.supertrend.direction === 1 ? '▲ Up' : '▼ Down'}
+                        </span>
+                        <div className="text-[9px] mono text-gray-500 whitespace-nowrap">
+                          flip {fmt(s.supertrend.value)}
+                        </div>
+                      </div>
+                    ) : <span className="text-gray-600">—</span>}
+                  </td>
+                  <td className={`px-2 py-2 mono ${s.atrPct == null ? 'text-gray-500' : s.atrPct >= 4 ? 'text-orange-400' : s.atrPct >= 2.5 ? 'text-yellow-400' : 'text-gray-300'}`}>
+                    {s.atrPct != null ? fmt(s.atrPct, 1) + '%' : '—'}
                   </td>
                   <td className="px-2 py-2 text-gray-300">
                     {s.buyZone ? `$${fmt(s.buyZone.price)} ${s.buyZone.label}` : '—'}

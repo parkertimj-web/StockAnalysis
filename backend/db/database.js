@@ -9,6 +9,9 @@ if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 const dbPath = path.join(dataDir, 'stocks.db');
 const db = new DatabaseSync(dbPath);
 
+// Wait up to 5s for competing locks instead of throwing "database is locked"
+// (e.g. a CLI script or second process touching the DB during startup)
+db.exec('PRAGMA busy_timeout = 5000');
 db.exec('PRAGMA journal_mode = WAL');
 db.exec('PRAGMA foreign_keys = ON');
 
