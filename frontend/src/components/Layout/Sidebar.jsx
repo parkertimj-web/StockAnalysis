@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, LineChart, BookOpen, Grid2X2,
-  List, Bell, BookMarked, FlaskConical, TrendingUp, BarChart2, Activity,
+  List, Bell, BookMarked, FlaskConical, TrendingUp, BarChart2, Activity, History,
 } from 'lucide-react';
 
 const links = [
@@ -16,6 +16,7 @@ const links = [
   { to: '/alerts',          label: 'Alerts',         icon: Bell },
   { to: '/journal',         label: 'Journal',        icon: BookMarked },
   { to: '/backtest',        label: 'Backtest',       icon: FlaskConical },
+  { to: '/crashes',         label: 'Crash History',  icon: History },
 ];
 
 export default function Sidebar() {
