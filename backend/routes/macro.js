@@ -98,54 +98,59 @@ router.post('/score', (req, res) => {
 });
 
 // ── Japan / US-Treasury watch ───────────────────────────────────────────────
-// Curated snapshot always; overlays live USD/JPY, US policy rate and a USD/JPY
-// history chart from FRED when FRED_API_KEY is set. Cached 6h.
+// USD/JPY history + spot come from Frankfurter (ECB daily reference rates, no
+// auth) so the chart works for everyone. Fed funds is overlaid from FRED when
+// FRED_API_KEY is set, else the curated snapshot value is used. Cached 6h.
 let _jpCache = null;
 
-router.get('/japan', async (req, res) => {
-  const key = process.env.FRED_API_KEY;
-  const framework = { scenarios: SCENARIOS, whyUnlikely: WHY_UNLIKELY, raisesRisk: RAISES_RISK, lowersRisk: LOWERS_RISK };
+async function fetchUsdJpySeries() {
+  const end = new Date();
+  const start = new Date(end);
+  start.setFullYear(end.getFullYear() - 2);
+  const iso = (d) => d.toISOString().slice(0, 10);
+  const r = await axios.get(`https://api.frankfurter.dev/v1/${iso(start)}..${iso(end)}`, {
+    params: { base: 'USD', symbols: 'JPY' }, timeout: 12000,
+  });
+  const rates = r.data?.rates || {};
+  return Object.keys(rates).sort()
+    .map(date => ({ date, value: rates[date]?.JPY }))
+    .filter(p => p.value != null);
+}
 
-  // No key → curated snapshot only
-  if (!key) {
-    const snap = { ...SNAPSHOT };
-    return res.json({ live: false, snapshot: snap, risk: scoreRisk(snap), framework, series: null });
-  }
+router.get('/japan', async (req, res) => {
+  const framework = { scenarios: SCENARIOS, whyUnlikely: WHY_UNLIKELY, raisesRisk: RAISES_RISK, lowersRisk: LOWERS_RISK };
 
   if (_jpCache && Date.now() < _jpCache.exp) return res.json(_jpCache.data);
 
+  // USD/JPY series + spot (no auth)
+  let series = null, spot = null, asOf = null;
   try {
-    const [jpyLatest, ffLatest, jpySeries] = await Promise.all([
-      fredLatest('DEXJPUS', key).catch(() => []),          // JPY per USD, daily
-      fredLatest('FEDFUNDS', key).catch(() => []),
-      // ~2y of daily USD/JPY for the chart
-      axios.get(FRED, { params: {
-        series_id: 'DEXJPUS', api_key: key, file_type: 'json',
-        sort_order: 'desc', limit: 520,
-      }, timeout: 12000 }).then(r => r.data?.observations || []).catch(() => []),
-    ]);
-
-    const num = (o) => (o && o.value != null && o.value !== '.' ? parseFloat(o.value) : null);
-    const snap = {
-      ...SNAPSHOT,
-      usdjpy: num(jpyLatest[0]) ?? SNAPSHOT.usdjpy,
-      fedRate: num(ffLatest[0]) ?? SNAPSHOT.fedRate,
-      asOf: jpyLatest[0]?.date || SNAPSHOT.asOf,
-    };
-
-    const series = jpySeries
-      .filter(o => o.value !== '.')
-      .map(o => ({ date: o.date, value: parseFloat(o.value) }))
-      .reverse(); // oldest first
-
-    const data = { live: true, snapshot: snap, risk: scoreRisk(snap), framework, series };
-    _jpCache = { data, exp: Date.now() + 6 * 60 * 60 * 1000 };
-    res.json(data);
+    series = await fetchUsdJpySeries();
+    if (series.length) { spot = series[series.length - 1].value; asOf = series[series.length - 1].date; }
   } catch (e) {
-    console.error('[macro/japan]', e.message);
-    const snap = { ...SNAPSHOT };
-    res.json({ live: false, reason: 'fred_error', snapshot: snap, risk: scoreRisk(snap), framework, series: null });
+    console.error('[macro/japan fx]', e.message);
   }
+
+  // Optional Fed-funds overlay from FRED
+  let fedRate = null;
+  const key = process.env.FRED_API_KEY;
+  if (key) {
+    try {
+      const ff = await fredLatest('FEDFUNDS', key);
+      if (ff[0]?.value != null && ff[0].value !== '.') fedRate = parseFloat(ff[0].value);
+    } catch (e) { console.error('[macro/japan fred]', e.message); }
+  }
+
+  const snap = {
+    ...SNAPSHOT,
+    usdjpy: spot ?? SNAPSHOT.usdjpy,
+    fedRate: fedRate ?? SNAPSHOT.fedRate,
+    asOf: asOf || SNAPSHOT.asOf,
+  };
+
+  const data = { live: !!series?.length, snapshot: snap, risk: scoreRisk(snap), framework, series };
+  if (series?.length) _jpCache = { data, exp: Date.now() + 6 * 60 * 60 * 1000 };
+  res.json(data);
 });
 
 module.exports = router;

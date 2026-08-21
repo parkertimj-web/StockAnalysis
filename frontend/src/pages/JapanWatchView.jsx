@@ -67,7 +67,7 @@ export default function JapanWatchView() {
           <h1 className="text-sm font-semibold text-gray-200">Japan / US-Treasury Watch</h1>
           {data && (
             <span className={`text-[10px] border rounded px-1.5 py-0.5 ${data.live ? 'border-green-800 text-green-400' : 'border-gray-700 text-gray-400'}`}>
-              {data.live ? `live · FRED · ${s?.asOf}` : `curated · as of ${s?.asOf}`}
+              {data.live ? `live · USD/JPY ${s?.asOf}` : `curated · as of ${s?.asOf}`}
             </span>
           )}
         </div>
@@ -151,8 +151,8 @@ export default function JapanWatchView() {
                 </ResponsiveContainer>
               ) : (
                 <div className="text-[11px] text-gray-400 h-[220px] flex items-center justify-center text-center px-4">
-                  Live USD/JPY history needs a <span className="mono text-gray-300 mx-1">FRED_API_KEY</span> in
-                  <span className="mono text-gray-300 ml-1">backend/.env</span>. The snapshot and risk framework work without it.
+                  USD/JPY history is temporarily unavailable (rate source unreachable). The snapshot and
+                  risk framework above still reflect the latest curated readings.
                 </div>
               )}
             </div>
@@ -195,8 +195,9 @@ export default function JapanWatchView() {
           )}
 
           <p className="text-[10px] text-gray-500">
-            Sources: US Treasury TIC data, FRED (DEXJPUS, FEDFUNDS), Bank of Japan, and reporting on the
-            July 2026 joint US–Japan intervention. Approximate, educational reference — not investment advice.
+            Sources: USD/JPY from Frankfurter (ECB daily reference rates); US Treasury TIC data, FRED
+            (FEDFUNDS), Bank of Japan, and reporting on the July 2026 joint US–Japan intervention.
+            Approximate, educational reference — not investment advice.
           </p>
         </>
       )}
