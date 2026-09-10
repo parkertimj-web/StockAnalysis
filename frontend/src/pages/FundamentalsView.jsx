@@ -171,7 +171,7 @@ export default function FundamentalsView() {
       )}
 
       {watchlist.length > 0 && (
-        <div className="card overflow-x-auto">
+        <div className="card overflow-x-auto lg:w-1/2">
           <table className="w-full text-[11px]">
             <thead>
               <tr className="border-b border-gray-800">
