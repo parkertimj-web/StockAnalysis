@@ -3,6 +3,7 @@ import { RefreshCw } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import useStore from '../store/store.js';
 import api from '../api/client.js';
+import FundamentalsTrendChart from '../components/common/FundamentalsTrendChart.jsx';
 
 function fmt(n, d = 2) {
   return n != null && !isNaN(n) ? Number(n).toFixed(d) : '—';
@@ -171,7 +172,7 @@ export default function FundamentalsView() {
 
       {watchlist.length > 0 && (
         <div className="card overflow-x-auto">
-          <table className="w-full text-xs">
+          <table className="w-full text-[11px]">
             <thead>
               <tr className="border-b border-gray-800">
                 {COLS.map(col => (
@@ -180,9 +181,9 @@ export default function FundamentalsView() {
                     onClick={() => handleSort(col.key)}
                     onMouseEnter={() => col.tip && setTooltip({ key: col.key, tip: col.tip })}
                     onMouseLeave={() => setTooltip(null)}
-                    className={`px-2 py-2 font-medium text-gray-300 cursor-pointer hover:text-gray-200 whitespace-nowrap select-none relative ${col.align === 'right' ? 'text-right' : 'text-left'}`}
+                    className={`px-1.5 py-1 font-medium text-gray-300 cursor-pointer hover:text-gray-200 whitespace-nowrap select-none relative ${col.align === 'right' ? 'text-right' : 'text-left'}`}
                   >
-                    <span className={`flex items-center gap-1 ${col.align === 'right' ? 'justify-end' : ''}`}>
+                    <span className={`flex items-center gap-0.5 ${col.align === 'right' ? 'justify-end' : ''}`}>
                       {col.align === 'right' && sortKey === col.key && (
                         <span className="text-blue-400">{sortDir === 'asc' ? '↑' : '↓'}</span>
                       )}
@@ -212,7 +213,7 @@ export default function FundamentalsView() {
               {sorted.map(row => (
                 <tr key={row.symbol} className="border-b border-gray-800/40 hover:bg-gray-800/30">
                   {COLS.map(col => (
-                    <td key={col.key} className={`px-2 py-2 ${col.align === 'right' ? 'text-right' : 'text-left'}`}>
+                    <td key={col.key} className={`px-1.5 py-1 ${col.align === 'right' ? 'text-right' : 'text-left'}`}>
                       {cellValue(row, col.key)}
                     </td>
                   ))}
@@ -227,6 +228,13 @@ export default function FundamentalsView() {
             </div>
           )}
         </div>
+      )}
+
+      {/* 12-month moving-average trend chart */}
+      {watchlist.length > 0 && (
+        <FundamentalsTrendChart
+          symbols={watchlist.map(w => w.symbol).filter(s => s !== 'SPY')}
+        />
       )}
 
       {/* PEG explanation */}
