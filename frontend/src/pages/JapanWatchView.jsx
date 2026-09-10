@@ -4,6 +4,7 @@ import {
 } from 'recharts';
 import api from '../api/client.js';
 import Tip from '../components/common/Tip.jsx';
+import NewsFeed from '../components/common/NewsFeed.jsx';
 
 function fmt(n, d = 1) { return n != null && !isNaN(n) ? Number(n).toFixed(d) : '—'; }
 
@@ -193,6 +194,8 @@ export default function JapanWatchView() {
               <List title="What lowers it (the real fix)" items={fw.lowersRisk} dot="bg-blue-500" />
             </div>
           )}
+
+          <NewsFeed topic="japan" title="Latest — Japan / yen & Treasuries" />
 
           <p className="text-[10px] text-gray-500">
             Sources: USD/JPY from Frankfurter (ECB daily reference rates); US Treasury TIC data, FRED
