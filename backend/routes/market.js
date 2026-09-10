@@ -9,6 +9,7 @@ const {
   calculateEMAArray,
   calculateVWAPArray,
   calculateBollingerBandsArray,
+  calculateSupertrendArray,
 } = require('../services/indicators');
 
 const PERIOD_DAYS = { '1mo': 30, '3mo': 90, '6mo': 180, '1y': 365, '2y': 730 };
@@ -42,6 +43,7 @@ router.get('/indicators', async (req, res) => {
     const ema21Arr  = calculateEMAArray(closes, 21);
     const vwapArr   = calculateVWAPArray(candles);
     const bbArr     = calculateBollingerBandsArray(closes, 20, 2);
+    const stArr     = calculateSupertrendArray(candles, 10, 3);
 
     // Trim to requested period
     const trimmed = candles.reduce((acc, c, i) => {
@@ -61,6 +63,7 @@ router.get('/indicators', async (req, res) => {
     const trimEma21  = slice(ema21Arr);
     const trimVwap   = slice(vwapArr);
     const trimBB     = slice(bbArr);
+    const trimST     = slice(stArr);
 
     // Build quote: live price from CBOE delayed quote, prev close from last historical bar
     const lastCandle = trimCandles[trimCandles.length - 1];
@@ -95,11 +98,15 @@ router.get('/indicators', async (req, res) => {
       ema21:    trimEma21,
       vwap:     trimVwap,
       bb:       trimBB,
+      supertrend: trimST,
       quote,
     });
   } catch (e) {
     console.error('[market]', e.message);
-    res.status(500).json({ error: e.message });
+    const msg = /429|run out of api credits|rate limit/i.test(e.message)
+      ? `Data provider rate limit hit for ${symbol.toUpperCase()} (free tier: 8 req/min) and no cached history exists yet. It will load automatically — try again in a minute.`
+      : e.message;
+    res.status(500).json({ error: msg });
   }
 });
 

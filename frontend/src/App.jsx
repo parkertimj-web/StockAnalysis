@@ -11,6 +11,9 @@ import JournalView from './pages/JournalView.jsx';
 import BacktestView from './pages/BacktestView.jsx';
 import FundamentalsView from './pages/FundamentalsView.jsx';
 import MovingAvgView from './pages/MovingAvgView.jsx';
+import MacroCyclesView from './pages/MacroCyclesView.jsx';
+import JapanWatchView from './pages/JapanWatchView.jsx';
+import ChinaWatchView from './pages/ChinaWatchView.jsx';
 import AlertToastBar from './components/common/AlertToastBar.jsx';
 
 export default function App() {
@@ -31,6 +34,9 @@ export default function App() {
           <Route path="backtest" element={<BacktestView />} />
           <Route path="fundamentals" element={<FundamentalsView />} />
           <Route path="moving-average" element={<MovingAvgView />} />
+          <Route path="crashes" element={<MacroCyclesView />} />
+          <Route path="japan-watch" element={<JapanWatchView />} />
+          <Route path="china-watch" element={<ChinaWatchView />} />
         </Route>
       </Routes>
     </>

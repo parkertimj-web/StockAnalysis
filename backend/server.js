@@ -45,6 +45,7 @@ app.use('/api/alerts',    require('./routes/alerts'));
 app.use('/api/journal',   require('./routes/journal'));
 app.use('/api/backtest',  require('./routes/backtest'));
 app.use('/api/signals',   require('./routes/signals'));
+app.use('/api/macro',     require('./routes/macro'));
 
 // VAPID public key endpoint
 app.get('/api/vapid-public-key', (req, res) => {

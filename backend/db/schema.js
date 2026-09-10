@@ -108,6 +108,14 @@ const schema = `
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS history_cache (
+    symbol     TEXT NOT NULL,
+    interval   TEXT NOT NULL,
+    candles    TEXT NOT NULL,
+    fetched_at INTEGER NOT NULL,
+    PRIMARY KEY (symbol, interval)
+  );
+
   CREATE TABLE IF NOT EXISTS fundamentals_cache (
     symbol     TEXT PRIMARY KEY,
     data       TEXT NOT NULL,

@@ -6,6 +6,7 @@ import api from '../api/client.js';
 import LiveBadge from '../components/common/LiveBadge.jsx';
 import Tip from '../components/common/Tip.jsx';
 import MeanRevBadge, { MEAN_REV_TIP, meanRevFromValues } from '../components/common/MeanRevBadge.jsx';
+import ResizeHandle from '../components/common/ResizeHandle.jsx';
 import { useAutoRefresh } from '../hooks/useAutoRefresh.js';
 
 const REFRESH_MS = 5 * 60_000; // 5 min — chart history is heavy
@@ -14,7 +15,7 @@ const PERIODS = ['1mo', '3mo', '6mo', '1y', '2y'];
 const INTERVALS = ['1d', '1wk'];
 const OVERLAY_LABELS = {
   sma20: 'SMA 20', sma50: 'SMA 50', sma200: 'SMA 200',
-  ema9: 'EMA 9', ema21: 'EMA 21', vwap: 'VWAP', bb: 'BB',
+  ema9: 'EMA 9', ema21: 'EMA 21', vwap: 'VWAP', bb: 'BB', st: 'Supertrend',
 };
 const OVERLAY_TIPS = {
   sma20:  'Simple Moving Average (20-day) — average of last 20 closing prices. Short-term trend.',
@@ -24,10 +25,11 @@ const OVERLAY_TIPS = {
   ema21:  'Exponential Moving Average (21-day) — short-term trend, smoother than EMA 9.',
   vwap:   'Volume Weighted Average Price — average price weighted by volume. Key intraday reference level.',
   bb:     'Bollinger Bands — volatility bands ±2 standard deviations from the 20-day SMA.',
+  st:     'Supertrend (10, 3×ATR) — trailing stop line that flips with trend. Green below price = uptrend; red above price = downtrend. The line itself is the stop/flip level.',
 };
 const OVERLAY_COLORS = {
   sma20: '#3b82f6', sma50: '#f59e0b', sma200: '#ef4444',
-  ema9: '#a78bfa', ema21: '#34d399', vwap: '#f472b6', bb: '#64748b',
+  ema9: '#a78bfa', ema21: '#34d399', vwap: '#f472b6', bb: '#64748b', st: '#22c55e',
 };
 
 function fmt(n, dec = 2) {
@@ -52,15 +54,21 @@ export default function ChartView() {
   const mainRef = useRef(null);
   const rsiRef = useRef(null);
   const macdRef = useRef(null);
+  const adxRef = useRef(null);
   const mainChart = useRef(null);
   const rsiChart = useRef(null);
   const macdChart = useRef(null);
+  const adxChart = useRef(null);
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const { period, interval, showRSI, showMACD, activeOverlays, mainHeight, rsiHeight, macdHeight } = chartPrefs;
+  // New prefs — persisted store from older versions won't have them, so default here
+  const showVolume = chartPrefs.showVolume ?? true;
+  const showADX = chartPrefs.showADX ?? false;
+  const adxHeight = chartPrefs.adxHeight ?? 150;
 
   useEffect(() => {
     if (paramSymbol) setSelectedSymbol(paramSymbol);
@@ -100,6 +108,7 @@ export default function ChartView() {
     mainChart.current?.remove(); mainChart.current = null;
     rsiChart.current?.remove();  rsiChart.current = null;
     macdChart.current?.remove(); macdChart.current = null;
+    adxChart.current?.remove();  adxChart.current = null;
 
     const closes = data.candles.map(c => c.close);
     // [chartInstance, domRef] pairs — used for sync + resize
@@ -131,6 +140,34 @@ export default function ChartView() {
         price: cp, color: '#e2e8f0', lineWidth: 1, lineStyle: 2,
         axisLabelVisible: true, title: `${cp.toFixed(2)}`,
       });
+    }
+
+    // Volume histogram pinned to the bottom ~18% of the main panel
+    if (showVolume) {
+      const volSeries = main.addSeries(HistogramSeries, {
+        priceScaleId: 'volume',
+        priceFormat: { type: 'volume' },
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
+      main.priceScale('volume').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+      volSeries.setData(data.candles.map(c => ({
+        time: c.time,
+        value: c.volume || 0,
+        color: c.close >= c.open ? '#22c55e33' : '#ef444433',
+      })));
+    }
+
+    // Supertrend — single line, colored per-point by trend direction
+    if (activeOverlays.st && data.supertrend) {
+      const stSeries = main.addSeries(LineSeries, {
+        lineWidth: 2, priceLineVisible: false, lastValueVisible: false,
+      });
+      stSeries.setData(data.supertrend.map((v, i) => v ? {
+        time: data.candles[i]?.time,
+        value: v.value,
+        color: v.direction === 1 ? '#22c55e' : '#ef4444',
+      } : null).filter(Boolean));
     }
 
     for (const key of ['sma20', 'sma50', 'sma200', 'ema9', 'ema21', 'vwap']) {
@@ -193,6 +230,34 @@ export default function ChartView() {
       sigS.setData(signalLine.map((v, i) => v !== null ? { time: data.candles[i]?.time, value: v } : null).filter(Boolean));
     }
 
+    // ── ADX panel ──────────────────────────────────────────────────────────────
+    if (showADX && adxRef.current) {
+      const adxValues = computeADXSeries(data.candles, 14);
+      const adx = createChart(adxRef.current, {
+        width: adxRef.current.clientWidth, height: adxHeight,
+        layout: { background: { color: '#030712' }, textColor: '#9ca3af' },
+        grid: { vertLines: { color: '#111827' }, horzLines: { color: '#111827' } },
+        timeScale: { timeVisible: false, borderColor: '#1f2937' },
+        rightPriceScale: { borderColor: '#1f2937', scaleMargins: { top: 0.1, bottom: 0.1 } },
+      });
+      adxChart.current = adx;
+      panels.push([adx, adxRef]);
+
+      const mkLine = (color, width = 1) =>
+        adx.addSeries(LineSeries, { color, lineWidth: width, priceLineVisible: false });
+      const toData = (key) => adxValues
+        .map((v, i) => v !== null ? { time: data.candles[i]?.time, value: v[key] } : null)
+        .filter(Boolean);
+
+      mkLine('#facc15', 2).setData(toData('adx'));      // ADX — trend strength
+      mkLine('#22c55e').setData(toData('diPlus'));      // DI+
+      mkLine('#ef4444').setData(toData('diMinus'));     // DI−
+      const threshold = adx.addSeries(LineSeries, {
+        color: '#9ca3af40', lineWidth: 1, lineStyle: 2, priceLineVisible: false,
+      });
+      threshold.setData(data.candles.map(c => ({ time: c.time, value: 25 })));
+    }
+
     // ── Bidirectional time-scale sync ──────────────────────────────────────────
     // When any panel is zoomed or panned, all others follow at the same range.
     // The `syncing` flag prevents the handlers from triggering each other.
@@ -226,8 +291,9 @@ export default function ChartView() {
       mainChart.current = null;
       rsiChart.current  = null;
       macdChart.current = null;
+      adxChart.current  = null;
     };
-  }, [data, activeOverlays, showRSI, showMACD, mainHeight, rsiHeight, macdHeight]);
+  }, [data, activeOverlays, showRSI, showMACD, showADX, showVolume, mainHeight, rsiHeight, macdHeight, adxHeight]);
 
   const q = data?.quote || {};
   const lastCandle  = data?.candles?.[data.candles.length - 1];
@@ -282,6 +348,14 @@ export default function ChartView() {
         <button onClick={() => setChartPrefs({ showMACD: !showMACD })}
           className={`${showMACD ? 'btn-primary' : 'btn-ghost'} inline-flex items-center gap-0.5`}>
           MACD<Tip text="Moving Average Convergence Divergence — 12-day EMA minus 26-day EMA, with 9-day signal line. Histogram shows momentum." below />
+        </button>
+        <button onClick={() => setChartPrefs({ showADX: !showADX })}
+          className={`${showADX ? 'btn-primary' : 'btn-ghost'} inline-flex items-center gap-0.5`}>
+          ADX<Tip text="Average Directional Index — trend strength (yellow) with DI+ (green) and DI− (red). ADX above 25 = strong trend; DI+ over DI− = bullish. Shown as sub-chart." below />
+        </button>
+        <button onClick={() => setChartPrefs({ showVolume: !showVolume })}
+          className={`${showVolume ? 'btn-primary' : 'btn-ghost'} inline-flex items-center gap-0.5`}>
+          Vol<Tip text="Volume histogram at the bottom of the price chart — green on up days, red on down days." below />
         </button>
         <div className="ml-auto">
           <LiveBadge
@@ -384,6 +458,11 @@ export default function ChartView() {
           <div className="card overflow-hidden">
             <div className="px-3 pt-2 pb-1 text-xs font-semibold text-gray-300">{symbol}</div>
             <div ref={mainRef} />
+            <ResizeHandle
+              height={mainHeight} min={240} max={1000}
+              onLiveResize={h => mainChart.current?.applyOptions({ height: h })}
+              onCommit={h => setChartPrefs({ mainHeight: h })}
+            />
           </div>
 
           {/* RSI */}
@@ -391,6 +470,11 @@ export default function ChartView() {
             <div className="card overflow-hidden">
               <div className="px-3 pt-2 pb-1 text-xs font-semibold text-gray-300">RSI (14)</div>
               <div ref={rsiRef} />
+              <ResizeHandle
+                height={rsiHeight} min={80} max={500}
+                onLiveResize={h => rsiChart.current?.applyOptions({ height: h })}
+                onCommit={h => setChartPrefs({ rsiHeight: h })}
+              />
             </div>
           )}
 
@@ -399,6 +483,31 @@ export default function ChartView() {
             <div className="card overflow-hidden">
               <div className="px-3 pt-2 pb-1 text-xs font-semibold text-gray-300">MACD (12, 26, 9)</div>
               <div ref={macdRef} />
+              <ResizeHandle
+                height={macdHeight} min={80} max={500}
+                onLiveResize={h => macdChart.current?.applyOptions({ height: h })}
+                onCommit={h => setChartPrefs({ macdHeight: h })}
+              />
+            </div>
+          )}
+
+          {/* ADX */}
+          {showADX && (
+            <div className="card overflow-hidden">
+              <div className="px-3 pt-2 pb-1 text-xs font-semibold text-gray-300 flex items-center gap-3">
+                ADX (14)
+                <span className="text-[10px] font-normal">
+                  <span className="text-yellow-400">ADX</span>{' · '}
+                  <span className="text-green-400">DI+</span>{' · '}
+                  <span className="text-red-400">DI−</span>
+                </span>
+              </div>
+              <div ref={adxRef} />
+              <ResizeHandle
+                height={adxHeight} min={80} max={500}
+                onLiveResize={h => adxChart.current?.applyOptions({ height: h })}
+                onCommit={h => setChartPrefs({ adxHeight: h })}
+              />
             </div>
           )}
         </>
@@ -427,6 +536,56 @@ function computeRSIArray(closes, period = 14) {
     avgL = (avgL * (period - 1) + l) / period;
     result[i] = avgL === 0 ? 100 : 100 - 100 / (1 + avgG / avgL);
   }
+  return result;
+}
+
+// Client-side ADX/DI series — keep in sync with backend indicators.js calculateADXSeries
+function computeADXSeries(candles, period = 14) {
+  const result = new Array(candles.length).fill(null);
+  if (candles.length < period * 2) return result;
+
+  const trs = [], plusDMs = [], minusDMs = [];
+  for (let i = 1; i < candles.length; i++) {
+    const h = candles[i].high, l = candles[i].low;
+    const ph = candles[i - 1].high, pl = candles[i - 1].low, pc = candles[i - 1].close;
+    trs.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
+    const upMove = h - ph;
+    const downMove = pl - l;
+    plusDMs.push(upMove > downMove && upMove > 0 ? upMove : 0);
+    minusDMs.push(downMove > upMove && downMove > 0 ? downMove : 0);
+  }
+
+  let smoothTR = trs.slice(0, period).reduce((a, b) => a + b, 0);
+  let smoothPlus = plusDMs.slice(0, period).reduce((a, b) => a + b, 0);
+  let smoothMinus = minusDMs.slice(0, period).reduce((a, b) => a + b, 0);
+
+  let adx = null;
+  const dxHistory = [];
+
+  for (let i = period; i < trs.length; i++) {
+    smoothTR = smoothTR - smoothTR / period + trs[i];
+    smoothPlus = smoothPlus - smoothPlus / period + plusDMs[i];
+    smoothMinus = smoothMinus - smoothMinus / period + minusDMs[i];
+    const diPlus = smoothTR > 0 ? (smoothPlus / smoothTR) * 100 : 0;
+    const diMinus = smoothTR > 0 ? (smoothMinus / smoothTR) * 100 : 0;
+    const dxDenom = diPlus + diMinus;
+    const dx = dxDenom > 0 ? (Math.abs(diPlus - diMinus) / dxDenom) * 100 : 0;
+    dxHistory.push(dx);
+
+    if (dxHistory.length === period) {
+      adx = dxHistory.reduce((a, b) => a + b, 0) / period;
+    } else if (dxHistory.length > period) {
+      adx = (adx * (period - 1) + dx) / period;
+    }
+
+    if (adx !== null) {
+      const candleIdx = i + 1; // offset: trs starts at candle[1]
+      if (candleIdx < result.length) {
+        result[candleIdx] = { adx, diPlus, diMinus };
+      }
+    }
+  }
+
   return result;
 }
 

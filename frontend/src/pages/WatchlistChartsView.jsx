@@ -31,16 +31,23 @@ function fmtFetchTime(date) {
     + date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-function MiniChart({ symbol, data, fetchedAt }) {
+function MiniChart({ symbol, data, fetchedAt, height = 220 }) {
   const chartRef = useRef(null);
+  const chartInst = useRef(null);
   const navigate = useNavigate();
   const setSelectedSymbol = useStore(s => s.setSelectedSymbol);
+
+  // Live-resize the existing chart when the height slider moves —
+  // no need to rebuild the whole chart
+  useEffect(() => {
+    chartInst.current?.applyOptions({ height });
+  }, [height]);
 
   useEffect(() => {
     if (!data || !chartRef.current) return;
     const chart = createChart(chartRef.current, {
       width: chartRef.current.clientWidth,
-      height: 220,
+      height,
       layout: { background: { color: '#030712' }, textColor: '#9ca3af' },
       grid: { vertLines: { color: '#111827' }, horzLines: { color: '#111827' } },
       timeScale: { timeVisible: false, borderColor: '#1f2937' },
@@ -81,8 +88,9 @@ function MiniChart({ symbol, data, fetchedAt }) {
 
     const ro = new ResizeObserver(() => chart.applyOptions({ width: chartRef.current?.clientWidth || 300 }));
     ro.observe(chartRef.current);
-    return () => { ro.disconnect(); chart.remove(); };
-  }, [data]);
+    chartInst.current = chart;
+    return () => { ro.disconnect(); chart.remove(); chartInst.current = null; };
+  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps — height handled via applyOptions above
 
   const q          = data?.quote || {};
   const last       = data?.candles?.[data.candles.length - 1];
@@ -156,6 +164,8 @@ export default function WatchlistChartsView() {
   const [chartData, setChartData]   = useState({});   // symbol -> data
   const [fetchTimes, setFetchTimes] = useState({});   // symbol -> Date
   const [loading, setLoading]       = useState(false);
+  const { chartPrefs, setChartPrefs } = useStore();
+  const miniHeight = chartPrefs.miniHeight ?? 220;
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -200,11 +210,23 @@ export default function WatchlistChartsView() {
             intervalSec={REFRESH_MS / 1000}
           />
         </div>
-        {lastUpdated && (
-          <span className="text-[10px] text-gray-300 mono">
-            {fmtFetchTime(lastUpdated)}
-          </span>
-        )}
+        <div className="flex items-center gap-4">
+          <label className="flex items-center gap-2 text-[10px] text-gray-300">
+            Chart height
+            <input
+              type="range" min="160" max="520" step="20"
+              value={miniHeight}
+              onChange={e => setChartPrefs({ miniHeight: +e.target.value })}
+              className="w-28 accent-blue-500"
+            />
+            <span className="mono w-10">{miniHeight}px</span>
+          </label>
+          {lastUpdated && (
+            <span className="text-[10px] text-gray-300 mono">
+              {fmtFetchTime(lastUpdated)}
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
@@ -214,6 +236,7 @@ export default function WatchlistChartsView() {
               symbol={symbol}
               data={chartData[symbol]}
               fetchedAt={fetchTimes[symbol]}
+              height={miniHeight}
             />
           </ErrorBoundary>
         ))}

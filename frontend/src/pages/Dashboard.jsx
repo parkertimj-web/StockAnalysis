@@ -19,6 +19,30 @@ function fmtVol(n) {
   return (n / 1e3).toFixed(0) + 'K';
 }
 
+// Tiny 30-day close-price sparkline, colored by direction over the window
+function Sparkline({ data, height = 28 }) {
+  if (!data || data.length < 2) return null;
+  const w = 100; // viewBox units; SVG stretches to container width
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const pts = data
+    .map((v, i) => `${(i / (data.length - 1)) * w},${height - 2 - ((v - min) / range) * (height - 4)}`)
+    .join(' ');
+  const up = data[data.length - 1] >= data[0];
+  return (
+    <svg width="100%" height={height} viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" className="block">
+      <polyline
+        points={pts}
+        fill="none"
+        stroke={up ? '#4ade80' : '#f87171'}
+        strokeWidth="1.5"
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
+  );
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const setSelectedSymbol = useStore(s => s.setSelectedSymbol);
@@ -163,11 +187,19 @@ export default function Dashboard() {
                 </div>
               </div>
 
+              {s?.spark && (
+                <div className="mb-1.5 relative">
+                  <Sparkline data={s.spark} />
+                  <span className="absolute top-0 right-0 text-[8px] text-gray-500">30d</span>
+                </div>
+              )}
+
               {s && (
-                <div className="grid grid-cols-3 gap-1 text-[10px] text-gray-300">
+                <div className="grid grid-cols-4 gap-1 text-[10px] text-gray-300">
                   <div>RSI<Tip text="Relative Strength Index — momentum 0–100. Above 70 = overbought, below 30 = oversold." below /> <span className="text-gray-300 mono">{fmt(s.rsi, 1)}</span></div>
                   <div>ADX<Tip text="Average Directional Index — trend strength. 14+ = trending, 25+ = strong trend." below /> <span className="text-gray-300 mono">{fmt(s.adx, 1)}</span></div>
                   <div>R:R<Tip text="Risk-to-Reward ratio — potential gain ÷ potential loss. ≥2 is favorable." below /> <span className={`mono ${s.rr >= 2 ? 'text-green-400' : 'text-gray-300'}`}>{s.rr != null ? fmt(s.rr) : '—'}</span></div>
+                  <div>Trend<Tip text="Supertrend (10, 3×ATR) direction — trailing-stop trend indicator. Up = price above the flip line." below /> <span className={`mono ${s.supertrend ? (s.supertrend.direction === 1 ? 'text-green-400' : 'text-red-400') : 'text-gray-300'}`}>{s.supertrend ? (s.supertrend.direction === 1 ? '▲ Up' : '▼ Dn') : '—'}</span></div>
                 </div>
               )}
               {s?.meanReversion && (

@@ -5,8 +5,22 @@
  * Options           → CBOE delayed quotes (no auth needed)
  */
 const axios = require('axios');
+const db = require('../db/database');
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+
+// ── Persistent history cache (SQLite) ───────────────────────────────────────
+// Survives server restarts (nodemon restarts wipe the in-memory cache and
+// previously caused a burst of TwelveData calls → 429s on the free tier).
+const histGet = db.prepare(
+  'SELECT candles, fetched_at FROM history_cache WHERE symbol = ? AND interval = ?'
+);
+const histPut = db.prepare(
+  `INSERT INTO history_cache (symbol, interval, candles, fetched_at)
+   VALUES (?, ?, ?, ?)
+   ON CONFLICT(symbol, interval) DO UPDATE
+   SET candles = excluded.candles, fetched_at = excluded.fetched_at`
+);
 
 // ── Simple in-memory cache ──────────────────────────────────────────────────
 const cache = new Map();
@@ -49,47 +63,91 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 // ── TwelveData interval mapping ───────────────────────────────────────────────
 const TD_INTERVAL = { '1d': '1day', '1wk': '1week', '1mo': '1month' };
 
+// ── TwelveData request throttle ───────────────────────────────────────────────
+// Free tier allows 8 req/min. Space actual network calls ≥8s apart so a
+// cold-cache watchlist scan queues instead of tripping 429s. Cache hits
+// never touch the queue.
+const TD_SPACING_MS = 8000;
+let _tdQueue = Promise.resolve();
+let _tdLastCall = 0;
+function tdThrottled(fn) {
+  const run = _tdQueue.then(async () => {
+    const wait = _tdLastCall + TD_SPACING_MS - Date.now();
+    if (wait > 0) await sleep(wait);
+    _tdLastCall = Date.now();
+    return fn();
+  });
+  _tdQueue = run.catch(() => {}); // keep the chain alive after failures
+  return run;
+}
+
+const _tdInflight = new Map(); // dedupe concurrent fetches per symbol/interval
+
 // ── TwelveData history fetch ──────────────────────────────────────────────────
+// Full (unfiltered) candle sets are stored in SQLite per symbol+interval.
+// Within TTL → serve from cache. Expired → refetch, but fall back to the
+// stale copy on any error (429, network, provider outage) so the UI always
+// gets data once a symbol has been fetched at least once.
 async function fetchTwelveData(symbol, interval, fromUnix) {
   const apiKey = process.env.TWELVEDATA_API_KEY;
   if (!apiKey) throw new Error('TWELVEDATA_API_KEY not set in .env');
 
   const tdInterval = TD_INTERVAL[interval] || '1day';
-  // outputsize: bars needed. 2y + 280 warmup ≈ 1010 bars; use 1200 to be safe.
-  const outputsize = 1200;
-  const key = `td:${symbol}:${tdInterval}:${new Date().toISOString().slice(0, 10)}`;
+  const fromFilter = (candles) => candles.filter(c => c.time >= fromUnix);
 
-  const cached = cacheGet(key);
-  if (cached) return cached;
+  const row = histGet.get(symbol, tdInterval);
+  if (row && Date.now() - row.fetched_at < historyTTL()) {
+    return fromFilter(JSON.parse(row.candles));
+  }
 
-  const res = await axios.get('https://api.twelvedata.com/time_series', {
-    params: { symbol, interval: tdInterval, outputsize, apikey: apiKey },
-    headers: { 'User-Agent': UA },
-    timeout: 20000,
+  const inflightKey = `${symbol}:${tdInterval}`;
+  if (_tdInflight.has(inflightKey)) {
+    return fromFilter(await _tdInflight.get(inflightKey));
+  }
+
+  const fetchPromise = tdThrottled(async () => {
+    // outputsize: bars needed. 2y + 280 warmup ≈ 1010 bars; use 1200 to be safe.
+    const res = await axios.get('https://api.twelvedata.com/time_series', {
+      params: { symbol, interval: tdInterval, outputsize: 1200, apikey: apiKey },
+      headers: { 'User-Agent': UA },
+      timeout: 20000,
+    });
+
+    if (res.data.status === 'error') throw new Error(`TwelveData: ${res.data.message}`);
+
+    const values = res.data.values || [];
+    // TwelveData returns newest-first; reverse to oldest-first for our indicators
+    const candles = values.reverse().map(v => ({
+      time:   Math.floor(new Date(v.datetime).getTime() / 1000),
+      open:   parseFloat(v.open),
+      high:   parseFloat(v.high),
+      low:    parseFloat(v.low),
+      close:  parseFloat(v.close),
+      volume: parseInt(v.volume) || 0,
+    })).filter(c => !isNaN(c.close) && !isNaN(c.time));
+
+    // TwelveData occasionally returns out-of-order or duplicate bars for thinly
+    // traded symbols — charts require strictly ascending unique timestamps
+    candles.sort((a, b) => a.time - b.time);
+    const deduped = candles.filter((c, i) => i === 0 || c.time !== candles[i - 1].time);
+
+    if (deduped.length) histPut.run(symbol, tdInterval, JSON.stringify(deduped), Date.now());
+    return deduped;
   });
 
-  if (res.data.status === 'error') throw new Error(`TwelveData: ${res.data.message}`);
-
-  const values = res.data.values || [];
-  // TwelveData returns newest-first; reverse to oldest-first for our indicators
-  const candles = values.reverse().map(v => ({
-    time:   Math.floor(new Date(v.datetime).getTime() / 1000),
-    open:   parseFloat(v.open),
-    high:   parseFloat(v.high),
-    low:    parseFloat(v.low),
-    close:  parseFloat(v.close),
-    volume: parseInt(v.volume) || 0,
-  })).filter(c => !isNaN(c.close) && !isNaN(c.time));
-
-  // TwelveData occasionally returns out-of-order or duplicate bars for thinly
-  // traded symbols — charts require strictly ascending unique timestamps
-  candles.sort((a, b) => a.time - b.time);
-  const deduped = candles.filter((c, i) => i === 0 || c.time !== candles[i - 1].time);
-
-  // Filter to requested start date
-  const filtered = deduped.filter(c => c.time >= fromUnix);
-  if (filtered.length) cacheSet(key, filtered, historyTTL());
-  return filtered;
+  _tdInflight.set(inflightKey, fetchPromise);
+  try {
+    return fromFilter(await fetchPromise);
+  } catch (e) {
+    if (row) {
+      const ageMin = Math.round((Date.now() - row.fetched_at) / 60000);
+      console.warn(`[history] ${symbol}: ${e.message} — serving stale cache (${ageMin} min old)`);
+      return fromFilter(JSON.parse(row.candles));
+    }
+    throw e;
+  } finally {
+    _tdInflight.delete(inflightKey);
+  }
 }
 
 // ── Build meta from candles (replaces Yahoo chart.meta) ─────────────────────

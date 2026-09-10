@@ -14,10 +14,14 @@ const useStore = create(
         mainHeight: 480,
         rsiHeight: 150,
         macdHeight: 150,
+        adxHeight: 150,
+        miniHeight: 220,
         period: '3mo',
         interval: '1d',
         showRSI: true,
         showMACD: false,
+        showADX: false,
+        showVolume: true,
         activeOverlays: {
           sma20: true,
           sma50: true,
@@ -26,6 +30,7 @@ const useStore = create(
           vwap: false,
           sma200: false,
           bb: false,
+          st: false,
         },
       },
       setChartPrefs: (update) =>

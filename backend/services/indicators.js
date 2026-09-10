@@ -171,6 +171,55 @@ function calculateATR(candles, period = 14) {
   return atr;
 }
 
+// Supertrend (period, multiplier) — ATR trailing bands that flip with trend.
+// Returns per-candle { value, direction } where direction is 1 (uptrend,
+// line below price = trailing stop) or -1 (downtrend, line above price).
+function calculateSupertrendArray(candles, period = 10, mult = 3) {
+  const n = candles.length;
+  const result = new Array(n).fill(null);
+  if (n < period + 1) return result;
+
+  // Wilder-smoothed ATR series
+  const atrArr = new Array(n).fill(null);
+  const trs = [];
+  for (let i = 1; i < n; i++) {
+    const h = candles[i].high, l = candles[i].low, pc = candles[i - 1].close;
+    trs.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
+  }
+  let atr = trs.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  atrArr[period] = atr;
+  for (let i = period + 1; i < n; i++) {
+    atr = (atr * (period - 1) + trs[i - 1]) / period;
+    atrArr[i] = atr;
+  }
+
+  let prevUpper = null, prevLower = null, prevST = null;
+  for (let i = period; i < n; i++) {
+    const mid = (candles[i].high + candles[i].low) / 2;
+    const a = atrArr[i];
+    let upper = mid + mult * a;
+    let lower = mid - mult * a;
+    const close = candles[i].close;
+    const prevClose = candles[i - 1].close;
+
+    // Bands only ratchet in the trend direction unless price closed beyond them
+    if (prevUpper !== null) {
+      if (!(upper < prevUpper || prevClose > prevUpper)) upper = prevUpper;
+      if (!(lower > prevLower || prevClose < prevLower)) lower = prevLower;
+    }
+
+    let direction;
+    if (prevST === null) direction = close >= mid ? 1 : -1;
+    else if (prevST === prevUpper) direction = close > upper ? 1 : -1;
+    else direction = close < lower ? -1 : 1;
+
+    const st = direction === 1 ? lower : upper;
+    result[i] = { value: st, direction };
+    prevUpper = upper; prevLower = lower; prevST = st;
+  }
+  return result;
+}
+
 function calculateADXSeries(candles, period = 14) {
   const result = new Array(candles.length).fill(null);
   if (candles.length < period * 2) return result;
@@ -352,6 +401,7 @@ module.exports = {
   calculateMFI,
   calculateROC,
   calculateATR,
+  calculateSupertrendArray,
   calculateADXSeries,
   calculateOBVSeries,
   findSwingLows,

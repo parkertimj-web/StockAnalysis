@@ -6,6 +6,7 @@ const {
   calculateRSI,
   calculateMACD,
   calculateATR,
+  calculateSupertrendArray,
   calculateADXSeries,
   calculateOBVSeries,
   calculateBollingerBands,
@@ -77,6 +78,18 @@ function analyseCandles(symbol, candles, spyCandles = null) {
 
   // ATR
   const atr = calculateATR(candles, 14);
+  const atrPct = atr !== null && price ? (atr / price) * 100 : null;
+
+  // Supertrend (10, 3×ATR) — informational trend state, not part of scoring
+  const stArr = calculateSupertrendArray(candles, 10, 3);
+  const stLast = stArr[stArr.length - 1];
+  const supertrend = stLast
+    ? {
+        direction: stLast.direction, // 1 = uptrend, -1 = downtrend
+        value: stLast.value,         // trailing stop / flip level
+        distPct: price ? ((price - stLast.value) / price) * 100 : null,
+      }
+    : null;
 
   // ADX
   const adxArr = calculateADXSeries(candles, 14);
@@ -326,6 +339,9 @@ function analyseCandles(symbol, candles, spyCandles = null) {
     mfi,
     roc,
     adx, diPlus, diMinus,
+    atr, atrPct,
+    supertrend,
+    spark: closes.slice(-30), // 30-day close sparkline for compact charts
     year52High, year52Low,
     buyZone,
     sellZone,
