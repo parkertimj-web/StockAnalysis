@@ -8,6 +8,15 @@ import NewsFeed from '../components/common/NewsFeed.jsx';
 
 function fmt(n, d = 2) { return n != null && !isNaN(n) ? Number(n).toFixed(d) : '—'; }
 
+// Keep only the trailing 12 months of a [{date, value}] series.
+function last12mo(series) {
+  if (!series?.length) return series;
+  const cutoff = new Date();
+  cutoff.setFullYear(cutoff.getFullYear() - 1);
+  const iso = cutoff.toISOString().slice(0, 10);
+  return series.filter(p => p.date >= iso);
+}
+
 function StatCard({ label, value, sub, tone = 'text-gray-100', tip }) {
   return (
     <div className="card p-3 text-center">
@@ -126,6 +135,37 @@ export default function ChinaWatchView() {
             </div>
 
             <NewsFeed topic="china" title="Latest — China / de-dollarization" />
+          </div>
+
+          {/* ── USD/CNY exchange rate (12mo) ─────────────────────────── */}
+          <div className="card p-4">
+            <div className="text-xs font-semibold text-gray-200 mb-2">USD/CNY exchange rate (12mo)</div>
+            {data.usdcnySeries?.length ? (
+              <ResponsiveContainer width="100%" height={200}>
+                <AreaChart data={last12mo(data.usdcnySeries)} margin={{ top: 6, right: 10, bottom: 0, left: 0 }}>
+                  <defs>
+                    <linearGradient id="cny" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#f87171" stopOpacity={0.45} />
+                      <stop offset="100%" stopColor="#f87171" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#9ca3af' }} minTickGap={40} />
+                  <YAxis domain={['auto', 'auto']} tick={{ fontSize: 10, fill: '#9ca3af' }} width={44}
+                    tickFormatter={(v) => v.toFixed(2)} />
+                  <Tooltip contentStyle={{ background: '#111827', border: '1px solid #374151', fontSize: 11 }}
+                    formatter={(v) => [fmt(v, 3), 'USD/CNY']} />
+                  <Area type="monotone" dataKey="value" stroke="#f87171" strokeWidth={1.5} fill="url(#cny)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-[11px] text-gray-400 h-[200px] flex items-center justify-center text-center px-4">
+                USD/CNY history is temporarily unavailable (rate source unreachable).
+              </div>
+            )}
+            <div className="text-[10px] text-gray-500 mt-1">
+              Yuan per dollar. The PBoC keeps the onshore rate in a tightly managed band, so moves are
+              small and deliberate — a policy signal more than a market float.
+            </div>
           </div>
 
           {/* ── Charts: gold up, Treasuries down ─────────────────────── */}

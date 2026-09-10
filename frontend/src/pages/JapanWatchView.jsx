@@ -8,6 +8,15 @@ import NewsFeed from '../components/common/NewsFeed.jsx';
 
 function fmt(n, d = 1) { return n != null && !isNaN(n) ? Number(n).toFixed(d) : '—'; }
 
+// Keep only the trailing 12 months of a [{date, value}] series.
+function last12mo(series) {
+  if (!series?.length) return series;
+  const cutoff = new Date();
+  cutoff.setFullYear(cutoff.getFullYear() - 1);
+  const iso = cutoff.toISOString().slice(0, 10);
+  return series.filter(p => p.date >= iso);
+}
+
 function StatCard({ label, value, sub, tone = 'text-gray-100', tip }) {
   return (
     <div className="card p-3 text-center">
@@ -131,10 +140,10 @@ export default function JapanWatchView() {
 
             {/* USD/JPY history (live only) */}
             <div className="card p-4">
-              <div className="text-xs font-semibold text-gray-200 mb-2">USD/JPY (2y)</div>
+              <div className="text-xs font-semibold text-gray-200 mb-2">USD/JPY (12mo)</div>
               {data.series?.length ? (
                 <ResponsiveContainer width="100%" height={220}>
-                  <AreaChart data={data.series} margin={{ top: 6, right: 10, bottom: 0, left: 0 }}>
+                  <AreaChart data={last12mo(data.series)} margin={{ top: 6, right: 10, bottom: 0, left: 0 }}>
                     <defs>
                       <linearGradient id="jpy" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor="#f87171" stopOpacity={0.5} />
