@@ -5,6 +5,7 @@ import {
 import api from '../api/client.js';
 import Tip from '../components/common/Tip.jsx';
 import NewsFeed from '../components/common/NewsFeed.jsx';
+import FxChart from '../components/common/FxChart.jsx';
 
 function fmt(n, d = 2) { return n != null && !isNaN(n) ? Number(n).toFixed(d) : '—'; }
 
@@ -126,6 +127,16 @@ export default function ChinaWatchView() {
             </div>
 
             <NewsFeed topic="china" title="Latest — China / de-dollarization" />
+          </div>
+
+          {/* ── USD/CNY exchange rate ────────────────────────────────── */}
+          <div className="card p-4">
+            <FxChart series={data.usdcnySeries} label="USD/CNY" decimals={2}
+              defaultRange="1Y" height={200} />
+            <div className="text-[10px] text-gray-500 mt-1">
+              Yuan per dollar. The PBoC keeps the onshore rate in a tightly managed band, so moves are
+              small and deliberate — a policy signal more than a market float.
+            </div>
           </div>
 
           {/* ── Charts: gold up, Treasuries down ─────────────────────── */}

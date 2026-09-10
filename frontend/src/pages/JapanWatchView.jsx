@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
-import {
-  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine,
-} from 'recharts';
 import api from '../api/client.js';
 import Tip from '../components/common/Tip.jsx';
 import NewsFeed from '../components/common/NewsFeed.jsx';
+import FxChart from '../components/common/FxChart.jsx';
 
 function fmt(n, d = 1) { return n != null && !isNaN(n) ? Number(n).toFixed(d) : '—'; }
 
@@ -129,33 +127,10 @@ export default function JapanWatchView() {
               )}
             </div>
 
-            {/* USD/JPY history (live only) */}
+            {/* USD/JPY history */}
             <div className="card p-4">
-              <div className="text-xs font-semibold text-gray-200 mb-2">USD/JPY (2y)</div>
-              {data.series?.length ? (
-                <ResponsiveContainer width="100%" height={220}>
-                  <AreaChart data={data.series} margin={{ top: 6, right: 10, bottom: 0, left: 0 }}>
-                    <defs>
-                      <linearGradient id="jpy" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#f87171" stopOpacity={0.5} />
-                        <stop offset="100%" stopColor="#f87171" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#9ca3af' }} minTickGap={40} />
-                    <YAxis domain={['auto', 'auto']} tick={{ fontSize: 10, fill: '#9ca3af' }} width={38} />
-                    <Tooltip contentStyle={{ background: '#111827', border: '1px solid #374151', fontSize: 11 }}
-                      formatter={(v) => [fmt(v, 2), 'USD/JPY']} />
-                    <ReferenceLine y={160} stroke="#ef4444" strokeDasharray="3 3"
-                      label={{ value: 'intervention ~160', fontSize: 9, fill: '#ef4444', position: 'insideTopRight' }} />
-                    <Area type="monotone" dataKey="value" stroke="#f87171" strokeWidth={1.5} fill="url(#jpy)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="text-[11px] text-gray-400 h-[220px] flex items-center justify-center text-center px-4">
-                  USD/JPY history is temporarily unavailable (rate source unreachable). The snapshot and
-                  risk framework above still reflect the latest curated readings.
-                </div>
-              )}
+              <FxChart series={data.series} label="USD/JPY" refLine={160}
+                refLabel="intervention ~160" decimals={2} defaultRange="1Y" />
             </div>
           </div>
 
