@@ -247,12 +247,12 @@ export default function MovingAvgView() {
               <thead>
                 <tr className="text-gray-400 border-b border-gray-700">
                   <th className="px-4 py-2 text-left">Symbol</th>
-                  <th className="px-4 py-2 text-right">EPS TTM<Tip text="Earnings Per Share — rolling 4-quarter (12-month) sum of diluted EPS." below /></th>
-                  <th className="px-4 py-2 text-right">EPS Grwth<Tip text="EPS Growth YoY — year-over-year change in TTM earnings per share." below /></th>
-                  <th className="px-4 py-2 text-right">Revenue TTM<Tip text="Trailing 12-month revenue — rolling 4-quarter sum from SEC EDGAR 10-Q filings." below /></th>
-                  <th className="px-4 py-2 text-right">Rev Grwth<Tip text="Revenue Growth YoY — year-over-year change in TTM revenue." below /></th>
-                  <th className="px-4 py-2 text-right">Net Income TTM<Tip text="Trailing 12-month net income — rolling 4-quarter sum." below /></th>
-                  <th className="px-4 py-2 text-right">Margin<Tip text="Profit Margin — TTM net income ÷ TTM revenue × 100." below /></th>
+                  <th className="px-4 py-2 text-right">EPS TTM<Tip text="Earnings Per Share — rolling 4-quarter (12-month) sum of diluted EPS." /></th>
+                  <th className="px-4 py-2 text-right">EPS Grwth<Tip text="EPS Growth YoY — year-over-year change in TTM earnings per share." /></th>
+                  <th className="px-4 py-2 text-right">Revenue TTM<Tip text="Trailing 12-month revenue — rolling 4-quarter sum from SEC EDGAR 10-Q filings." /></th>
+                  <th className="px-4 py-2 text-right">Rev Grwth<Tip text="Revenue Growth YoY — year-over-year change in TTM revenue." /></th>
+                  <th className="px-4 py-2 text-right">Net Income TTM<Tip text="Trailing 12-month net income — rolling 4-quarter sum." /></th>
+                  <th className="px-4 py-2 text-right">Margin<Tip text="Profit Margin — TTM net income ÷ TTM revenue × 100." /></th>
                 </tr>
               </thead>
               <tbody>

@@ -281,7 +281,7 @@ export default function SignalsView() {
                   className="px-2 py-2 text-left text-gray-300 font-medium cursor-pointer hover:text-gray-200 whitespace-nowrap"
                 >
                   <span className="flex items-center gap-1">
-                    {col.label}{col.tip && <Tip text={col.tip} below />} <SortIcon col={col.key} />
+                    {col.label}{col.tip && <Tip text={col.tip} />} <SortIcon col={col.key} />
                   </span>
                 </th>
               ))}
@@ -299,11 +299,6 @@ export default function SignalsView() {
                   </td>
                   <td className="px-2 py-2 font-semibold text-gray-100 whitespace-nowrap">
                     {s.symbol}
-                    {s.spyRegime !== 'neutral' && (
-                      <span className={`ml-1 text-[9px] border rounded px-1 ${s.spyRegime === 'bull' ? 'border-green-800 text-green-500' : 'border-red-800 text-red-500'}`}>
-                        {s.spyRegime}
-                      </span>
-                    )}
                   </td>
                   <td className="px-2 py-2 mono text-gray-200">{fmt(s.price)}</td>
                   <td className={`px-2 py-2 mono ${s.changePct == null ? 'text-gray-500' : s.changePct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
@@ -316,7 +311,7 @@ export default function SignalsView() {
                     <div className="space-y-1">
                       <MeanRevBadge mr={s.meanReversion} />
                       {s.meanReversion?.buyPoint != null && (
-                        <div className="flex items-center gap-1.5 text-[9px] mono leading-none">
+                        <div className="flex items-center gap-1.5 text-[9px] mono leading-none whitespace-nowrap">
                           <span className={s.meanReversion.at === 'buy' ? 'text-green-400 font-bold' : 'text-gray-500'}>
                             B {fmt(s.meanReversion.buyPoint)}
                           </span>

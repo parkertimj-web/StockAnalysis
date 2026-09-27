@@ -2,7 +2,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { getHistory, getQuotes, getLiveQuote } = require('../services/yahooFinance');
+const { getHistory, getQuotes, getLiveQuote, isQuoteFresh } = require('../services/yahooFinance');
 const { getFundamentalsBatch, getMovingAvgBatch } = require('../services/secEdgar');
 const {
   calculateSMAArray,
@@ -69,24 +69,28 @@ router.get('/indicators', async (req, res) => {
     const lastCandle = trimCandles[trimCandles.length - 1];
     const prevCandle = trimCandles[trimCandles.length - 2];
 
-    // liveQuote.price = current session price (updates ~15 min delayed during market hours)
-    // meta.regularMarketPrice = last historical daily close = previous close
-    const regularMarketPrice = liveQuote?.price ?? meta.regularMarketPrice;
-    const previousClose      = liveQuote?.prevClose ?? meta.regularMarketPrice; // last daily bar close as fallback
+    // Only trust the live quote if its last print is at least as recent as the
+    // latest daily bar. A frozen/stale feed (older tradeTime) is discarded so it
+    // can't override the fresh daily close.
+    const lq = isQuoteFresh(liveQuote, lastCandle?.time) ? liveQuote : null;
+
+    // lq.price = current session price (updates during market hours)
+    // meta.regularMarketPrice = latest daily close (fresh fallback)
+    const regularMarketPrice = lq?.price ?? meta.regularMarketPrice;
+    const previousClose      = lq?.prevClose ?? prevCandle?.close ?? meta.chartPreviousClose;
 
     const quote = {
       regularMarketPrice,
       previousClose,
-      open:             liveQuote?.open    ?? meta.regularMarketOpen    ?? lastCandle?.open,
-      dayHigh:          liveQuote?.high    ?? meta.regularMarketDayHigh ?? lastCandle?.high,
-      dayLow:           liveQuote?.low     ?? meta.regularMarketDayLow  ?? lastCandle?.low,
-      volume:           liveQuote?.volume  ?? meta.regularMarketVolume  ?? lastCandle?.volume,
+      open:             lq?.open    ?? meta.regularMarketOpen    ?? lastCandle?.open,
+      dayHigh:          lq?.high    ?? meta.regularMarketDayHigh ?? lastCandle?.high,
+      dayLow:           lq?.low     ?? meta.regularMarketDayLow  ?? lastCandle?.low,
+      volume:           lq?.volume  ?? meta.regularMarketVolume  ?? lastCandle?.volume,
       avgVolume:        meta.averageDailyVolume10Day ?? null,
       fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh,
       fiftyTwoWeekLow:  meta.fiftyTwoWeekLow,
-      liveAt:           liveQuote?.date && liveQuote?.time
-                          ? `${liveQuote.date} ${liveQuote.time}`
-                          : null,
+      liveAt:           lq?.date && lq?.time ? `${lq.date} ${lq.time}` : null,
+      quoteSource:      lq?.source ?? 'eod',   // 'yahoo' | 'cboe' | 'eod' (daily close)
     };
 
     res.json({

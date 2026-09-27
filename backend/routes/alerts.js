@@ -85,7 +85,7 @@ router.delete('/:id', (req, res) => {
 router.patch('/:id/toggle', (req, res) => {
   try {
     db.prepare(
-      'UPDATE alerts SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END WHERE id = ?'
+      'UPDATE alerts SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END, armed = 1 WHERE id = ?'
     ).run(req.params.id);
     const alert = db.prepare('SELECT * FROM alerts WHERE id = ?').get(req.params.id);
     res.json(alert);

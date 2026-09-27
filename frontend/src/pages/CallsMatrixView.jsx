@@ -1,26 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { format } from 'date-fns';
+import { fmtExpiry } from '../utils/format.js';
 import useStore from '../store/store.js';
 import api from '../api/client.js';
+import { standardExpiries, groupByYear } from '../utils/expiries.js';
 
 function fmt(n, d = 2) { return n != null ? n.toFixed(d) : '—'; }
-
-// Only Fridays, not expired, capped at 2027, grouped by year
-function groupFridaysByYear(dates) {
-  const now = Date.now();
-  const groups = {};
-  for (const d of dates) {
-    if (d <= now) continue;                          // skip expired
-    const date = new Date(d);
-    if (date.getUTCDay() !== 5) continue;            // Fridays only
-    const yr = date.getUTCFullYear();
-    if (yr > 2027) continue;                         // cap at LEAPS 2027
-    if (!groups[yr]) groups[yr] = [];
-    groups[yr].push(d);
-  }
-  return Object.entries(groups).sort(([a], [b]) => Number(a) - Number(b));
-}
 
 export default function CallsMatrixView() {
   const { symbol: paramSymbol } = useParams();
@@ -137,7 +122,7 @@ export default function CallsMatrixView() {
         <div className="card p-3 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-[10px] text-gray-300 uppercase tracking-wide">
-              Expiry Dates — Fridays only
+              Expiry Dates — through furthest LEAPS
               {selectedExpiries.length > 0 && (
                 <span className="ml-1 text-blue-400">· {selectedExpiries.length} selected</span>
               )}
@@ -148,7 +133,7 @@ export default function CallsMatrixView() {
             >Clear</button>
           </div>
 
-          {groupFridaysByYear(allExpiries).map(([year, dates]) => (
+          {groupByYear(standardExpiries(allExpiries)).map(([year, dates]) => (
             <div key={year}>
               <div className="text-[10px] text-gray-300 uppercase tracking-widest mb-1">
                 {year}{Number(year) >= new Date().getFullYear() + 1 ? ' · LEAPS' : ''}
@@ -164,7 +149,7 @@ export default function CallsMatrixView() {
                         : 'bg-gray-900 border-gray-800 text-gray-300 hover:border-blue-600 hover:text-gray-200'
                     }`}
                   >
-                    {format(new Date(d), 'MMM d')}
+                    {fmtExpiry(d)}
                   </button>
                 ))}
               </div>
@@ -204,7 +189,8 @@ export default function CallsMatrixView() {
                 <th className="px-3 py-2 text-left text-gray-300 sticky left-0 bg-gray-900">Strike</th>
                 {matrix.expiries.map(d => (
                   <th key={d} className="px-3 py-2 text-center text-gray-300 font-medium whitespace-nowrap">
-                    {format(new Date(d), 'MMM d')}
+                    {/* Year included since LEAPS columns can span several years */}
+                    {fmtExpiry(d, 'MMM d, yyyy')}
                   </th>
                 ))}
               </tr>
@@ -224,7 +210,7 @@ export default function CallsMatrixView() {
                         <td key={d} className="px-3 py-1.5 text-center">
                           {c ? (
                             <div className="space-y-0.5">
-                              <div className="mono text-gray-200">{fmt(c.lastPrice)}</div>
+                              <div className={`mono ${c.lastPrice ? 'text-gray-200' : 'text-gray-600'}`}>{c.lastPrice ? fmt(c.lastPrice) : '—'}</div>
                               <div className="text-gray-300 text-[10px]">
                                 {c.bid != null ? `${fmt(c.bid)}/${fmt(c.ask)}` : '—'}
                               </div>

@@ -6,6 +6,7 @@ import useStore from '../store/store.js';
 import LiveBadge from '../components/common/LiveBadge.jsx';
 import ErrorBoundary from '../components/common/ErrorBoundary.jsx';
 import { useAutoRefresh } from '../hooks/useAutoRefresh.js';
+import { fmtBarDate } from '../utils/format.js';
 
 const REFRESH_MS = 5 * 60_000; // 5 min
 
@@ -17,11 +18,8 @@ function fmtVol(n) {
   return (n / 1e3).toFixed(0) + 'K';
 }
 
-function fmtBarDate(unixSec) {
-  if (!unixSec) return null;
-  return new Date(unixSec * 1000).toLocaleDateString('en-US', {
-    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
-  });
+function fmtDay(unixSec) {
+  return fmtBarDate(unixSec, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function fmtFetchTime(date) {
@@ -71,7 +69,7 @@ function MiniChart({ symbol, data, fetchedAt, height = 220 }) {
         lineWidth: 1,
         lineStyle: 2,
         axisLabelVisible: true,
-        title: `${cp.toFixed(2)}`,
+        title: data.quote?.quoteSource === 'eod' ? 'Close' : 'Live',
       });
     }
 
@@ -133,7 +131,7 @@ function MiniChart({ symbol, data, fetchedAt, height = 220 }) {
           ['AvgVol', fmtVol(q.avgVolume)],
           ['52W H',  fmt(q.fiftyTwoWeekHigh)],
           ['52W L',  fmt(q.fiftyTwoWeekLow)],
-          ['Price',  fmt(last?.close)],
+          ['Bar close', fmt(last?.close)],
         ].map(([k, v]) => (
           <div key={k} className="text-center">
             <div className="text-gray-300">{k}</div>
@@ -145,8 +143,8 @@ function MiniChart({ symbol, data, fetchedAt, height = 220 }) {
       {/* Timestamp row */}
       <div className="px-3 pb-2 flex items-center justify-between text-[9px] text-gray-300 border-t border-gray-800/40 pt-1">
         <span>
-          {fmtBarDate(last?.time)
-            ? <>Last bar: <span className="text-gray-300">{fmtBarDate(last.time)}</span></>
+          {fmtDay(last?.time)
+            ? <>Last bar: <span className="text-gray-300">{fmtDay(last.time)}</span></>
             : 'No data'}
         </span>
         {fetchedAt && (

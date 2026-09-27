@@ -128,7 +128,7 @@ export default function MacroCyclesView() {
       <div className="card p-4">
         <div className="flex items-center gap-2 mb-3">
           <h2 className="text-xs font-semibold text-gray-200">Where are we now?</h2>
-          <Tip below text="Scores how many classic pre-crash conditions are present today. Educational pattern-matching against history — not a forecast." />
+          <Tip text="Scores how many classic pre-crash conditions are present today. Educational pattern-matching against history — not a forecast." />
           {current && (
             <span className={`text-[10px] border rounded px-1.5 py-0.5 ${current.live ? 'border-green-800 text-green-400' : 'border-gray-700 text-gray-400'}`}>
               {current.live ? `live · FRED · as of ${current.current?.asOf}` : 'manual entry'}
@@ -214,7 +214,7 @@ export default function MacroCyclesView() {
         <div>
           <div className="flex items-center gap-2 mb-2">
             <h2 className="text-xs font-semibold text-gray-200">Correlations with drawdown depth</h2>
-            <Tip below text="Pearson correlation between each macro reading at the peak and how deep the crash went. n≈18 episodes — descriptive only, not statistically robust." />
+            <Tip text="Pearson correlation between each macro reading at the peak and how deep the crash went. n≈18 episodes — descriptive only, not statistically robust." />
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
             <CorrScatter title="Fed funds vs depth" xlabel="Fed funds" xunit="%"
@@ -273,7 +273,7 @@ export default function MacroCyclesView() {
                 ['Trigger', ''],
               ].map(([h, tip]) => (
                 <th key={h} className="px-2.5 py-2 text-left font-medium">
-                  <span className="inline-flex items-center gap-0.5">{h}{tip && <Tip below text={tip} />}</span>
+                  <span className="inline-flex items-center gap-0.5">{h}{tip && <Tip text={tip} />}</span>
                 </th>
               ))}
             </tr>

@@ -10,7 +10,7 @@ function StatCard({ label, value, sub, tone = 'text-gray-100', tip }) {
   return (
     <div className="card p-3 text-center">
       <div className="text-gray-300 text-[10px] flex items-center justify-center gap-0.5">
-        {label}{tip && <Tip below text={tip} />}
+        {label}{tip && <Tip text={tip} />}
       </div>
       <div className={`text-lg font-semibold mono ${tone}`}>{value}</div>
       {sub && <div className="text-gray-400 text-[9px] mt-0.5">{sub}</div>}
@@ -101,7 +101,7 @@ export default function JapanWatchView() {
             <div className="card p-4">
               <div className="flex items-center gap-2 mb-3">
                 <h2 className="text-xs font-semibold text-gray-200">Sell-off risk</h2>
-                <Tip below text="How many conditions that would push Japan toward selling Treasuries are present now. Educational gauge, not a forecast." />
+                <Tip text="How many conditions that would push Japan toward selling Treasuries are present now. Educational gauge, not a forecast." />
               </div>
               <div className="flex items-baseline gap-2 mb-3">
                 <span className={`text-2xl font-bold ${riskTone}`}>{risk?.level}</span>

@@ -8,6 +8,7 @@ import Tip from '../components/common/Tip.jsx';
 import MeanRevBadge, { MEAN_REV_TIP, meanRevFromValues } from '../components/common/MeanRevBadge.jsx';
 import ResizeHandle from '../components/common/ResizeHandle.jsx';
 import { useAutoRefresh } from '../hooks/useAutoRefresh.js';
+import { fmtBarDate } from '../utils/format.js';
 
 const REFRESH_MS = 5 * 60_000; // 5 min — chart history is heavy
 
@@ -56,6 +57,9 @@ export default function ChartView() {
   const macdRef = useRef(null);
   const adxRef = useRef(null);
   const mainChart = useRef(null);
+  // Zoom/pan to restore when the chart is rebuilt for the same view (auto-refresh,
+  // toggling an overlay, returning to the tab) instead of snapping back to fit.
+  const savedView = useRef(null);
   const rsiChart = useRef(null);
   const macdChart = useRef(null);
   const adxChart = useRef(null);
@@ -138,7 +142,7 @@ export default function ChartView() {
     if (cp != null) {
       candleSeries.createPriceLine({
         price: cp, color: '#e2e8f0', lineWidth: 1, lineStyle: 2,
-        axisLabelVisible: true, title: `${cp.toFixed(2)}`,
+        axisLabelVisible: true, title: data.quote?.quoteSource === 'eod' ? 'Close' : 'Live',
       });
     }
 
@@ -276,6 +280,23 @@ export default function ChartView() {
       });
     }
 
+    // ── Restore the user's zoom from the previous build of this same view ─────
+    // (after sync is wired, so the sub-panels follow the main chart)
+    const viewKey = `${symbol}|${period}|${interval}`;
+    const barCount = data.candles.length;
+    const sv = savedView.current;
+    if (sv && sv.key === viewKey) {
+      try {
+        if (sv.atRightEdge) {
+          // Keep the same zoom width and right-edge offset so newly arrived bars stay in view
+          const to = barCount - 1 + sv.rightOffset;
+          main.timeScale().setVisibleLogicalRange({ from: to - sv.width, to });
+        } else {
+          main.timeScale().setVisibleRange(sv.timeRange);
+        }
+      } catch { /* range no longer valid for this data — keep fitContent */ }
+    }
+
     // ── Resize observers ───────────────────────────────────────────────────────
     const ros = panels.map(([chart, ref]) => {
       const ro = new ResizeObserver(() => {
@@ -286,6 +307,20 @@ export default function ChartView() {
     });
 
     return () => {
+      try {
+        const ts = main.timeScale();
+        const lr = ts.getVisibleLogicalRange();
+        const tr = ts.getVisibleRange();
+        if (lr && tr) {
+          savedView.current = {
+            key: viewKey,
+            width: lr.to - lr.from,
+            rightOffset: lr.to - (barCount - 1),
+            atRightEdge: lr.to >= barCount - 1.5,
+            timeRange: tr,
+          };
+        }
+      } catch { /* chart already disposed */ }
       ros.forEach(ro => ro.disconnect());
       panels.forEach(([c]) => { try { c.remove(); } catch { /* already gone */ } });
       mainChart.current = null;
@@ -337,25 +372,25 @@ export default function ChartView() {
             onClick={() => setActiveOverlay(key, !activeOverlays[key])}
             className={`${activeOverlays[key] ? 'btn-primary' : 'btn-ghost'} inline-flex items-center gap-0.5`}
             style={activeOverlays[key] ? { backgroundColor: OVERLAY_COLORS[key] + '33', borderColor: OVERLAY_COLORS[key] } : {}}>
-            {label}<Tip text={OVERLAY_TIPS[key]} below />
+            {label}<Tip text={OVERLAY_TIPS[key]} />
           </button>
         ))}
         <div className="h-4 w-px bg-gray-700" />
         <button onClick={() => setChartPrefs({ showRSI: !showRSI })}
           className={`${showRSI ? 'btn-primary' : 'btn-ghost'} inline-flex items-center gap-0.5`}>
-          RSI<Tip text="Relative Strength Index — momentum oscillator 0–100. Above 70 = overbought, below 30 = oversold. Shown as sub-chart below price." below />
+          RSI<Tip text="Relative Strength Index — momentum oscillator 0–100. Above 70 = overbought, below 30 = oversold. Shown as sub-chart below price." />
         </button>
         <button onClick={() => setChartPrefs({ showMACD: !showMACD })}
           className={`${showMACD ? 'btn-primary' : 'btn-ghost'} inline-flex items-center gap-0.5`}>
-          MACD<Tip text="Moving Average Convergence Divergence — 12-day EMA minus 26-day EMA, with 9-day signal line. Histogram shows momentum." below />
+          MACD<Tip text="Moving Average Convergence Divergence — 12-day EMA minus 26-day EMA, with 9-day signal line. Histogram shows momentum." />
         </button>
         <button onClick={() => setChartPrefs({ showADX: !showADX })}
           className={`${showADX ? 'btn-primary' : 'btn-ghost'} inline-flex items-center gap-0.5`}>
-          ADX<Tip text="Average Directional Index — trend strength (yellow) with DI+ (green) and DI− (red). ADX above 25 = strong trend; DI+ over DI− = bullish. Shown as sub-chart." below />
+          ADX<Tip text="Average Directional Index — trend strength (yellow) with DI+ (green) and DI− (red). ADX above 25 = strong trend; DI+ over DI− = bullish. Shown as sub-chart." />
         </button>
         <button onClick={() => setChartPrefs({ showVolume: !showVolume })}
           className={`${showVolume ? 'btn-primary' : 'btn-ghost'} inline-flex items-center gap-0.5`}>
-          Vol<Tip text="Volume histogram at the bottom of the price chart — green on up days, red on down days." below />
+          Vol<Tip text="Volume histogram at the bottom of the price chart — green on up days, red on down days." />
         </button>
         <div className="ml-auto">
           <LiveBadge
@@ -374,7 +409,8 @@ export default function ChartView() {
         </div>
       )}
 
-      {loading && <div className="card p-8 text-center text-gray-300 text-sm animate-pulse">Loading {symbol}…</div>}
+      {/* Only on first load — a background refresh keeps the current chart on screen */}
+      {loading && !data && <div className="card p-8 text-center text-gray-300 text-sm animate-pulse">Loading {symbol}…</div>}
       {error && <div className="card p-4 text-red-400 text-xs">{error}</div>}
 
       {data && (
@@ -396,7 +432,7 @@ export default function ChartView() {
             )}
             {meanRev && (
               <span className={`flex items-center gap-1 text-[10px] text-gray-300 ${q.liveAt ? '' : 'ml-auto'}`}>
-                Mean Rev<Tip text={MEAN_REV_TIP} below />
+                Mean Rev<Tip text={MEAN_REV_TIP} />
                 <MeanRevBadge mr={meanRev} size="xs" />
               </span>
             )}
@@ -431,9 +467,7 @@ export default function ChartView() {
                 <span>
                   Last bar:{' '}
                   <span className="text-gray-300 mono">
-                    {new Date(lastCandle.time * 1000).toLocaleDateString('en-US', {
-                      weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
-                    })}
+                    {fmtBarDate(lastCandle.time, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
                   </span>
                 </span>
               )}

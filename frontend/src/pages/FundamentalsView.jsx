@@ -3,6 +3,9 @@ import { RefreshCw } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import useStore from '../store/store.js';
 import api from '../api/client.js';
+import FundamentalsTrendChart from '../components/common/FundamentalsTrendChart.jsx';
+import { fmtMoney } from '../utils/format.js';
+import Tip from '../components/common/Tip.jsx';
 
 function fmt(n, d = 2) {
   return n != null && !isNaN(n) ? Number(n).toFixed(d) : '—';
@@ -63,7 +66,6 @@ export default function FundamentalsView() {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [sortKey, setSortKey]     = useState('pegRatio');
   const [sortDir, setSortDir]     = useState('asc');
-  const [tooltip, setTooltip]     = useState(null);
 
   const inFlight = useRef(false);
 
@@ -118,8 +120,8 @@ export default function FundamentalsView() {
     if (key === 'forwardPE')       return <span className={`mono ${peColor(v)}`}>{fmt(v, 1)}</span>;
     if (key === 'priceToBook')     return <span className="mono text-gray-200">{fmt(v, 1)}</span>;
     if (key === 'evToEbitda')      return <span className="mono text-gray-200">{fmt(v, 1)}</span>;
-    if (key === 'trailingEps')     return <span className={`mono ${v != null && v < 0 ? 'text-red-400' : 'text-gray-200'}`}>${fmt(v)}</span>;
-    if (key === 'forwardEps')      return <span className={`mono ${v != null && v < 0 ? 'text-red-400' : 'text-gray-200'}`}>${fmt(v)}</span>;
+    if (key === 'trailingEps')     return <span className={`mono ${v != null && v < 0 ? 'text-red-400' : 'text-gray-200'}`}>{fmtMoney(v)}</span>;
+    if (key === 'forwardEps')      return <span className={`mono ${v != null && v < 0 ? 'text-red-400' : 'text-gray-200'}`}>{fmtMoney(v)}</span>;
     if (key === 'earningsGrowth')  return <span className={`mono ${growthColor(v)}`}>{fmtPct(v)}</span>;
     if (key === 'revenueGrowth')   return <span className={`mono ${growthColor(v)}`}>{fmtPct(v)}</span>;
     if (key === 'profitMargin')    return <span className={`mono ${growthColor(v)}`}>{fmtPct(v)}</span>;
@@ -158,7 +160,7 @@ export default function FundamentalsView() {
         <span><span className="text-green-400 font-semibold">PEG &lt; 1</span> — undervalued vs growth</span>
         <span><span className="text-yellow-400 font-semibold">PEG 1–2</span> — fairly valued</span>
         <span><span className="text-red-400 font-semibold">PEG &gt; 2</span> — expensive vs growth</span>
-        <span className="ml-auto text-gray-300 italic">Hover column headers for definitions · data cached ~30 days</span>
+        <span className="ml-auto text-gray-300 italic">Hover ⓘ for definitions · data cached ~30 days</span>
       </div>
 
       {error && <div className="card p-3 text-red-400 text-xs">{error}</div>}
@@ -170,33 +172,26 @@ export default function FundamentalsView() {
       )}
 
       {watchlist.length > 0 && (
-        <div className="card overflow-x-auto">
-          <table className="w-full text-xs">
+        <div className="card overflow-x-auto w-fit max-w-full">
+          <table className="w-full text-[11px]">
             <thead>
               <tr className="border-b border-gray-800">
                 {COLS.map(col => (
                   <th
                     key={col.key}
                     onClick={() => handleSort(col.key)}
-                    onMouseEnter={() => col.tip && setTooltip({ key: col.key, tip: col.tip })}
-                    onMouseLeave={() => setTooltip(null)}
-                    className={`px-2 py-2 font-medium text-gray-300 cursor-pointer hover:text-gray-200 whitespace-nowrap select-none relative ${col.align === 'right' ? 'text-right' : 'text-left'}`}
+                    className={`px-1.5 py-1 font-medium text-gray-300 cursor-pointer hover:text-gray-200 whitespace-nowrap select-none relative ${col.align === 'right' ? 'text-right' : 'text-left'}`}
                   >
-                    <span className={`flex items-center gap-1 ${col.align === 'right' ? 'justify-end' : ''}`}>
+                    <span className={`flex items-center gap-0.5 ${col.align === 'right' ? 'justify-end' : ''}`}>
                       {col.align === 'right' && sortKey === col.key && (
                         <span className="text-blue-400">{sortDir === 'asc' ? '↑' : '↓'}</span>
                       )}
                       {col.label}
-                      {col.tip && <span className="text-gray-300 text-[9px]">ⓘ</span>}
+                      {col.tip && <Tip text={col.tip} />}
                       {col.align === 'left' && sortKey === col.key && (
                         <span className="text-blue-400">{sortDir === 'asc' ? '↑' : '↓'}</span>
                       )}
                     </span>
-                    {tooltip?.key === col.key && (
-                      <div className="absolute top-full left-0 z-50 mt-1 w-52 bg-gray-800 border border-gray-700 rounded p-2 text-[10px] text-gray-200 shadow-lg whitespace-normal text-left pointer-events-none">
-                        {tooltip.tip}
-                      </div>
-                    )}
                   </th>
                 ))}
               </tr>
@@ -212,7 +207,7 @@ export default function FundamentalsView() {
               {sorted.map(row => (
                 <tr key={row.symbol} className="border-b border-gray-800/40 hover:bg-gray-800/30">
                   {COLS.map(col => (
-                    <td key={col.key} className={`px-2 py-2 ${col.align === 'right' ? 'text-right' : 'text-left'}`}>
+                    <td key={col.key} className={`px-1.5 py-1 ${col.align === 'right' ? 'text-right' : 'text-left'}`}>
                       {cellValue(row, col.key)}
                     </td>
                   ))}
@@ -227,6 +222,13 @@ export default function FundamentalsView() {
             </div>
           )}
         </div>
+      )}
+
+      {/* 12-month moving-average trend chart */}
+      {watchlist.length > 0 && (
+        <FundamentalsTrendChart
+          symbols={watchlist.map(w => w.symbol).filter(s => s !== 'SPY')}
+        />
       )}
 
       {/* PEG explanation */}

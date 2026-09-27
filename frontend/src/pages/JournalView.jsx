@@ -3,6 +3,7 @@ import { Plus, X, CheckCircle, Trash2, Brain } from 'lucide-react';
 import { format } from 'date-fns';
 import api from '../api/client.js';
 import Modal from '../components/common/Modal.jsx';
+import { fmtMoney } from '../utils/format.js';
 
 function fmt(n, d = 2) { return n != null ? n.toFixed(d) : '—'; }
 
@@ -78,12 +79,17 @@ export default function JournalView() {
       {/* Stats */}
       {stats && (
         <div className="grid grid-cols-4 gap-3">
-          {[
-            ['Total P&L',  `$${fmt(stats.totalPnl)}`,   stats.totalPnl >= 0 ? 'text-green-400' : 'text-red-400'],
-            ['Win Rate',   `${fmt(stats.winRate, 1)}%`,  'text-blue-400'],
-            ['Expectancy', `$${fmt(stats.expectancy)}`,  stats.expectancy >= 0 ? 'text-green-400' : 'text-red-400'],
-            ['Open Trades', stats.openTrades,            'text-yellow-400'],
-          ].map(([label, val, cls]) => (
+          {(() => {
+            // P&L, win rate and expectancy are meaningless before any trade closes
+            const closed = stats.closedTrades > 0;
+            const pnlCls = v => !closed ? 'text-gray-500' : v >= 0 ? 'text-green-400' : 'text-red-400';
+            return [
+              ['Total P&L',  closed ? fmtMoney(stats.totalPnl) : '—',       pnlCls(stats.totalPnl)],
+              ['Win Rate',   closed ? `${fmt(stats.winRate, 1)}%` : '—',    closed ? 'text-blue-400' : 'text-gray-500'],
+              ['Expectancy', closed ? fmtMoney(stats.expectancy) : '—',     pnlCls(stats.expectancy)],
+              ['Open Trades', stats.openTrades, stats.openTrades ? 'text-yellow-400' : 'text-gray-200'],
+            ];
+          })().map(([label, val, cls]) => (
             <div key={label} className="card p-3 text-center">
               <div className="text-gray-300 text-[10px]">{label}</div>
               <div className={`text-sm font-semibold mono ${cls}`}>{val}</div>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Play, ChevronDown, ChevronUp, HelpCircle } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import api from '../api/client.js';
+import { fmtBarDate } from '../utils/format.js';
 
 function fmt(n, d = 2) { return n != null ? n.toFixed(d) : '—'; }
 
@@ -239,8 +240,8 @@ export default function BacktestView() {
                   <tbody>
                     {result.trades.map((t, i) => (
                       <tr key={i} className="border-b border-gray-800/30">
-                        <td className="px-3 py-1.5 text-gray-300">{new Date(t.entryDate * 1000).toLocaleDateString()}</td>
-                        <td className="px-3 py-1.5 text-gray-300">{new Date(t.exitDate * 1000).toLocaleDateString()}</td>
+                        <td className="px-3 py-1.5 text-gray-300">{fmtBarDate(t.entryDate)}</td>
+                        <td className="px-3 py-1.5 text-gray-300">{fmtBarDate(t.exitDate)}</td>
                         <td className="px-3 py-1.5 mono text-gray-300">{fmt(t.entryPrice)}</td>
                         <td className="px-3 py-1.5 mono text-gray-300">{fmt(t.exitPrice)}</td>
                         <td className={`px-3 py-1.5 mono font-medium ${t.pnlPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
