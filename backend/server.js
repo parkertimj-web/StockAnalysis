@@ -9,9 +9,15 @@ process.on('uncaughtException',      err => console.error('[uncaughtException]',
 process.on('unhandledRejection', (reason) => console.error('[unhandledRejection]', reason));
 
 // ── Port setup ───────────────────────────────────────────────────────────────
-// In production Railway sets PORT; locally use API_PORT or 3001
+// In production Railway sets PORT. In dev the generic PORT is ignored: tools
+// like concurrently/preview runners export PORT for the frontend (5173), and
+// the Vite proxy expects the API on 3001 — honoring PORT would bind the API to
+// the frontend's port and the stale-process cleanup below would kill Vite.
 const { execSync } = require('child_process');
-const PORT = parseInt(process.env.PORT || process.env.API_PORT || '3001', 10);
+const PORT = parseInt(
+  IS_PROD ? (process.env.PORT || '3001') : (process.env.API_PORT || '3001'),
+  10
+);
 
 // Auto-kill stale local processes (Mac/Linux dev only — skip in production)
 if (!IS_PROD) {
@@ -72,12 +78,17 @@ if (IS_PROD) {
 cron.schedule('*/15 14-21 * * 1-5', async () => { // market hours Mon-Fri ET only
   try {
     const db = require('./db/database');
-    const { getHistory } = require('./services/yahooFinance');
+    const { getHistory, getLiveQuote, primeQuotes, isQuoteFresh } = require('./services/yahooFinance');
     const { analyseCandles } = require('./services/signalEngine');
     const { checkAlerts } = require('./services/alertService');
 
     const symbols = db.prepare('SELECT DISTINCT symbol FROM watchlist').all().map(r => r.symbol);
-    if (!symbols.length) return;
+    const alertOnly = db.prepare('SELECT DISTINCT symbol FROM alerts WHERE is_active = 1').all()
+      .map(r => r.symbol).filter(s => !symbols.includes(s));
+    if (!symbols.length && !alertOnly.length) return;
+
+    // Alerts are judged on the live intraday price, not the daily bar's close
+    await primeQuotes([...symbols, ...alertOnly]).catch(() => {});
 
     const now = Math.floor(Date.now() / 1000);
     const from = now - (365 + 280) * 86400;
@@ -89,11 +100,13 @@ cron.schedule('*/15 14-21 * * 1-5', async () => { // market hours Mon-Fri ET onl
     } catch {}
 
     for (const sym of symbols) {
-      await new Promise(r => setTimeout(r, 350));
       try {
         const { candles } = await getHistory(sym, from, now, '1d');
         const signal = analyseCandles(sym, candles, spyCandles);
         if (signal) {
+          const lq = await getLiveQuote(sym).catch(() => null);
+          const lastBarTime = candles[candles.length - 1]?.time;
+          if (lq?.price && isQuoteFresh(lq, lastBarTime)) signal.price = lq.price;
           await checkAlerts(sym, signal.price);
           db.prepare(
             `INSERT INTO signal_history (symbol, price, signal, score, max_score, components)
@@ -110,7 +123,16 @@ cron.schedule('*/15 14-21 * * 1-5', async () => { // market hours Mon-Fri ET onl
         console.error(`[cron] ${sym}:`, e.message);
       }
     }
-    console.log(`[cron] Signal scan complete for ${symbols.length} symbols`);
+
+    // Alerts on symbols outside the watchlist: no daily bars to validate
+    // against, so require the quote's last print to be under a day old.
+    for (const sym of alertOnly) {
+      const lq = await getLiveQuote(sym).catch(() => null);
+      if (lq?.price && lq.tradeTime && now - lq.tradeTime < 86400) {
+        await checkAlerts(sym, lq.price);
+      }
+    }
+    console.log(`[cron] Signal scan complete for ${symbols.length} symbols, ${alertOnly.length} alert-only`);
   } catch (e) {
     console.error('[cron] Error:', e.message);
   }

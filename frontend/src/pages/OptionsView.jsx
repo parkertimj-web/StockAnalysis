@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
-import { format } from 'date-fns';
+import { fmtExpiry } from '../utils/format.js';
 import useStore from '../store/store.js';
 import api from '../api/client.js';
+import { standardExpiries, groupByYear } from '../utils/expiries.js';
 
 function fmt(n, d = 2) { return n != null ? Number(n).toFixed(d) : '—'; }
 
@@ -43,7 +44,9 @@ function ContractTable({ contracts, underlyingPrice, side }) {
               <td className={`px-2 py-1 mono text-[10px] ${pct != null && pct > 0 ? 'text-green-600' : 'text-red-600'}`}>
                 {pct != null ? (pct > 0 ? '+' : '') + pct.toFixed(1) + '%' : '—'}
               </td>
-              <td className="px-2 py-1 mono text-right text-gray-300">{fmt(c.lastPrice)}</td>
+              <td className={`px-2 py-1 mono text-right ${c.lastPrice ? 'text-gray-300' : 'text-gray-600'}`}>
+                {c.lastPrice ? fmt(c.lastPrice) : '—'}
+              </td>
               <td className="px-2 py-1 mono text-right text-gray-300">{fmt(c.bid)}</td>
               <td className="px-2 py-1 mono text-right text-gray-300">{fmt(c.ask)}</td>
               <td className="px-2 py-1 mono text-right text-gray-300">
@@ -55,18 +58,6 @@ function ContractTable({ contracts, underlyingPrice, side }) {
       </tbody>
     </table>
   );
-}
-
-// Group dates by year, cap at 2027
-function groupByYear(dates) {
-  const groups = {};
-  for (const d of dates) {
-    const yr = new Date(d).getUTCFullYear();
-    if (yr > 2027) continue;
-    if (!groups[yr]) groups[yr] = [];
-    groups[yr].push(d);
-  }
-  return Object.entries(groups).sort(([a], [b]) => Number(a) - Number(b));
 }
 
 export default function OptionsView() {
@@ -109,11 +100,11 @@ export default function OptionsView() {
         setAllDates(dates);
         setUnderlying(r.data.underlyingPrice ?? null);
 
-        const fridays = dates.filter(d => new Date(d).getUTCDay() === 5);
+        const standard = standardExpiries(dates);
 
-        // Restore previously selected dates that are still valid and still Fridays
+        // Restore previously selected dates that are still listed
         const saved   = (optionsPrefs.savedDates || []).filter(d => dates.includes(d));
-        const initial = saved.length ? saved : (fridays.length ? [fridays[0]] : []);
+        const initial = saved.length ? saved : (standard.length ? [standard[0]] : []);
 
         if (!initial.length) return;
         setSelectedDates(new Set(initial));
@@ -243,7 +234,7 @@ export default function OptionsView() {
           {loadingDates && <div className="text-gray-300 text-xs animate-pulse">Loading…</div>}
           {datesError   && <div className="text-red-400 text-xs">{datesError}</div>}
 
-          {groupByYear(allDates.filter(d => new Date(d).getUTCDay() === 5)).map(([year, dates]) => (
+          {groupByYear(standardExpiries(allDates)).map(([year, dates]) => (
             <div key={year}>
               <div className="text-[10px] text-gray-300 uppercase tracking-widest mb-1">
                 {year}{Number(year) >= new Date().getFullYear() + 1 ? ' · LEAPS' : ''}
@@ -258,7 +249,7 @@ export default function OptionsView() {
                         on ? 'bg-blue-600/30 border-blue-500 text-blue-300'
                            : 'bg-gray-900 border-gray-800 text-gray-300 hover:border-blue-600 hover:text-gray-200'
                       } ${isLoading ? 'opacity-50' : ''}`}>
-                      {format(new Date(d), 'MMM d')}{isLoading ? ' …' : ''}
+                      {fmtExpiry(d)}{isLoading ? ' …' : ''}
                     </button>
                   );
                 })}
@@ -280,7 +271,7 @@ export default function OptionsView() {
           <div className="flex gap-3" style={{ minWidth: 'max-content' }}>
             {sortedSelected.map(dateMs => {
               const chain     = chainCache[dateMs];
-              const label     = format(new Date(dateMs), 'MMM d, yyyy');
+              const label     = fmtExpiry(dateMs, 'MMM d, yyyy');
               const isLoading = loadingChains.has(dateMs);
 
               return (

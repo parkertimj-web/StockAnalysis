@@ -24,4 +24,15 @@ try {
   }
 }
 
+// Additive column migrations for databases created before the column existed.
+// `armed` = 1 while a recurring alert may fire; set to 0 after it fires and back
+// to 1 once its condition clears, so it fires once per crossing, not every scan.
+for (const sql of [
+  'ALTER TABLE alerts ADD COLUMN armed INTEGER NOT NULL DEFAULT 1',
+]) {
+  try { db.exec(sql); } catch (e) {
+    if (!e.message.includes('duplicate column')) console.warn('Migration warning:', e.message);
+  }
+}
+
 module.exports = db;

@@ -13,7 +13,7 @@ function StatCard({ label, value, sub, tone = 'text-gray-100', tip }) {
   return (
     <div className="card p-3 text-center">
       <div className="text-gray-300 text-[10px] flex items-center justify-center gap-0.5">
-        {label}{tip && <Tip below text={tip} />}
+        {label}{tip && <Tip text={tip} />}
       </div>
       <div className={`text-lg font-semibold mono ${tone}`}>{value}</div>
       {sub && <div className="text-gray-400 text-[9px] mt-0.5">{sub}</div>}
@@ -103,7 +103,7 @@ export default function ChinaWatchView() {
             <div className="card p-4">
               <div className="flex items-center gap-2 mb-3">
                 <h2 className="text-xs font-semibold text-gray-200">De-dollarization momentum</h2>
-                <Tip below text="How many structural shifts off the dollar are active now. Momentum is real — but it is not the same as replacing the dollar (see limits below)." />
+                <Tip text="How many structural shifts off the dollar are active now. Momentum is real — but it is not the same as replacing the dollar (see limits below)." />
               </div>
               <div className="flex items-baseline gap-2 mb-3">
                 <span className={`text-2xl font-bold ${momTone}`}>{m?.level}</span>

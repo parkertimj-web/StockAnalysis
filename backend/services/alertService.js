@@ -88,17 +88,27 @@ async function fireAlert(alert, price) {
   sendPushNotification(`Stock Alert: ${alert.symbol}`, message).catch(() => {});
 }
 
+// Edge-triggered: an alert fires when its condition becomes true, then stays
+// quiet (disarmed) until the condition clears and it re-arms. Without this a
+// recurring alert re-fired — and re-emailed — on every scan while the price
+// stayed past the level.
 async function checkAlerts(symbol, price) {
+  if (price == null || isNaN(price)) return;
   const alerts = db.prepare(
     'SELECT * FROM alerts WHERE symbol = ? AND is_active = 1'
   ).all(symbol);
 
   for (const alert of alerts) {
-    let triggered = false;
-    if (alert.condition === 'above' && price > alert.value) triggered = true;
-    if (alert.condition === 'below' && price < alert.value) triggered = true;
+    const conditionMet =
+      (alert.condition === 'above' && price > alert.value) ||
+      (alert.condition === 'below' && price < alert.value);
 
-    if (triggered) await fireAlert(alert, price);
+    if (conditionMet && alert.armed) {
+      db.prepare('UPDATE alerts SET armed = 0 WHERE id = ?').run(alert.id);
+      await fireAlert(alert, price);
+    } else if (!conditionMet && !alert.armed) {
+      db.prepare('UPDATE alerts SET armed = 1 WHERE id = ?').run(alert.id);
+    }
   }
 }
 

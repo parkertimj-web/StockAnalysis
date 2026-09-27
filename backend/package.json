@@ -4,8 +4,8 @@
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node --experimental-sqlite server.js",
-    "dev": "nodemon --exec \"node --experimental-sqlite\" server.js"
+    "start": "node --experimental-sqlite --max-http-header-size=65536 server.js",
+    "dev": "nodemon --exec \"node --experimental-sqlite --max-http-header-size=65536\" server.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

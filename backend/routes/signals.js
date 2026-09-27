@@ -3,21 +3,45 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
-const { getHistory, getLiveQuote } = require('../services/yahooFinance');
+const { getHistory, getLiveQuote, primeQuotes, isQuoteFresh } = require('../services/yahooFinance');
 const { analyseCandles } = require('../services/signalEngine');
 const { summariseSignal } = require('../services/claudeAI');
 
 const WARMUP_DAYS = 280;
 const PERIOD_DAYS = 365; // always use 1yr + warmup for signal accuracy
-const FETCH_DELAY  = 350; // ms between sequential Yahoo requests
-
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 async function fetchCandles(symbol) {
   const now = Math.floor(Date.now() / 1000);
   const from = now - (PERIOD_DAYS + WARMUP_DAYS) * 86400;
   const { candles } = await getHistory(symbol, from, now, '1d');
   return candles;
+}
+
+// Overlay the live intraday quote onto a signal — but only when it's fresh
+// (last print no older than the latest daily bar). A stale/frozen feed is
+// ignored so the analyseCandles price (fresh daily close) stands instead.
+async function applyLiveQuote(signal, candles) {
+  const prevClose = candles.length >= 2 ? candles[candles.length - 2].close : null;
+  try {
+    const lastBarTime = candles[candles.length - 1]?.time ?? 0;
+    const lq = await getLiveQuote(signal.symbol);
+    if (lq?.price && isQuoteFresh(lq, lastBarTime)) {
+      signal.price       = lq.price;
+      signal.dayHigh     = lq.high;
+      signal.dayLow      = lq.low;
+      signal.dayOpen     = lq.open;
+      signal.volume      = lq.volume;
+      signal.quoteTime   = lq.time;
+      signal.quoteSource = lq.source;
+      const base         = lq.prevClose ?? prevClose ?? lq.open;
+      signal.change      = lq.price - base;
+      signal.changePct   = base ? ((lq.price - base) / base) * 100 : 0;
+      return;
+    }
+  } catch { /* fall through to the EOD close */ }
+  signal.change      = prevClose != null ? signal.price - prevClose : null;
+  signal.changePct   = prevClose ? ((signal.price - prevClose) / prevClose) * 100 : null;
+  signal.quoteSource = 'eod';
 }
 
 // GET /api/signals/watchlist
@@ -27,6 +51,11 @@ router.get('/watchlist', async (req, res) => {
     const symbols = watchlistRows.map(r => r.symbol);
 
     if (!symbols.length) return res.json([]);
+
+    // Warm all live quotes in one batched Yahoo call so the per-symbol
+    // getLiveQuote() calls below are instant cache hits (avoids slow sequential
+    // per-symbol quote fetches).
+    await primeQuotes([...symbols, 'SPY']).catch(() => {});
 
     // Fetch SPY first (single request)
     let spyCandles = null;
@@ -38,45 +67,28 @@ router.get('/watchlist', async (req, res) => {
       console.error('[signals] SPY fetch:', e.message);
     }
 
-    // Fetch each watchlist symbol sequentially to avoid rate limits
-    const results = [];
-    for (const sym of symbols) {
-      await sleep(FETCH_DELAY);
+    // Analyse all symbols concurrently. Rate limiting lives in the data layer:
+    // uncached history requests queue through the TwelveData throttle, while
+    // cache hits and CBOE quote lookups proceed in parallel.
+    const analysed = await Promise.all(symbols.map(async (sym) => {
       try {
         const candles = await fetchCandles(sym);
         const signal  = analyseCandles(sym, candles, spyCandles);
-        if (!signal) continue;
-
-        // prevClose = last fully settled EOD bar close
-        const prevClose = candles.length >= 2
-          ? candles[candles.length - 2].close
-          : null;
-
-        // Overlay live delayed quote price (updates intraday, unlike EOD daily bars)
-        try {
-          const lq = await getLiveQuote(sym);
-          if (lq?.price) {
-            signal.price     = lq.price;
-            signal.dayHigh   = lq.high;
-            signal.dayLow    = lq.low;
-            signal.dayOpen   = lq.open;
-            signal.volume    = lq.volume;
-            signal.quoteTime = lq.time;
-            const base       = lq.prevClose ?? prevClose ?? lq.open;
-            signal.change    = lq.price - base;
-            signal.changePct = base ? ((lq.price - base) / base) * 100 : 0;
-          }
-        } catch { /* keep analyseCandles price on quote failure */ }
-
-        results.push(signal);
+        if (!signal) return null;
+        await applyLiveQuote(signal, candles);
+        return signal;
       } catch (e) {
         console.error(`[signals] ${sym}:`, e.message);
+        return null;
       }
-    }
+    }));
+    const results = analysed.filter(Boolean);
 
     // Add SPY result if not already in watchlist
     if (!symbols.includes('SPY') && spyResult) {
-      results.push({ ...spyResult, isSpy: true });
+      const spy = { ...spyResult, isSpy: true };
+      await applyLiveQuote(spy, spyCandles);
+      results.push(spy);
     }
 
     res.json(results);
@@ -87,10 +99,8 @@ router.get('/watchlist', async (req, res) => {
 });
 
 async function fetchSignal(symbol) {
-  // Fetch SPY and target symbol sequentially (cache means SPY is usually instant)
   let spyCandles = null;
   try { spyCandles = await fetchCandles('SPY'); } catch {}
-  if (symbol !== 'SPY') await sleep(FETCH_DELAY);
   const candles = await fetchCandles(symbol);
   return analyseCandles(symbol, candles, spyCandles);
 }

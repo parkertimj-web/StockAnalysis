@@ -42,13 +42,33 @@ function isMarketHours() {
   return isWeekday && mins >= 9 * 60 + 30 && mins < 16 * 60;
 }
 
-// TwelveData free tier: 8 req/min, 800 req/day.
-// Cache aggressively to stay well within limits.
-// History TTL: 15 min during market hours, 60 min outside.
-function historyTTL() {
-  return isMarketHours()
-    ? 15 * 60 * 1000   // 15 min during market hours
-    : 60 * 60 * 1000;  // 60 min outside market hours
+// Shift epoch ms so a Date's UTC fields read as Eastern time (rough UTC-4,
+// same approximation as isMarketHours).
+const ET_OFFSET_MS = 4 * 3600 * 1000;
+function isWeekendET(ms) {
+  const day = new Date(ms - ET_OFFSET_MS).getUTCDay();
+  return day === 0 || day === 6;
+}
+
+// Most recent weekday 16:00 ET close at or before `now`, as epoch ms.
+// (Exchange holidays aren't modeled; they only cost one extra refetch.)
+function lastMarketCloseMs(now = Date.now()) {
+  const et = new Date(now - ET_OFFSET_MS);
+  let close = Date.UTC(et.getUTCFullYear(), et.getUTCMonth(), et.getUTCDate(), 16, 0) + ET_OFFSET_MS;
+  while (close > now || isWeekendET(close)) close -= 86400 * 1000;
+  return close;
+}
+
+// TwelveData free tier: 8 req/min, 800 req/day — cache aggressively.
+// Market open: bars change intraday, so refresh every 15 min.
+// Market closed: daily bars can't change until the next open, so a copy
+// fetched after the last close (plus settling grace) stays valid all night
+// and all weekend instead of being refetched hourly.
+const HISTORY_OPEN_TTL = 15 * 60 * 1000;
+const CLOSE_SETTLE_MS  = 15 * 60 * 1000;
+function isHistoryFresh(fetchedAt) {
+  if (isMarketHours()) return Date.now() - fetchedAt < HISTORY_OPEN_TTL;
+  return fetchedAt >= lastMarketCloseMs() + CLOSE_SETTLE_MS;
 }
 
 // Live quote TTL: short during market hours so intraday prices stay fresh.
@@ -85,9 +105,13 @@ const _tdInflight = new Map(); // dedupe concurrent fetches per symbol/interval
 
 // ── TwelveData history fetch ──────────────────────────────────────────────────
 // Full (unfiltered) candle sets are stored in SQLite per symbol+interval.
-// Within TTL → serve from cache. Expired → refetch, but fall back to the
-// stale copy on any error (429, network, provider outage) so the UI always
-// gets data once a symbol has been fetched at least once.
+//   fresh cache  → serve it.
+//   stale cache  → serve it immediately and refresh in the background
+//                  (stale-while-revalidate), so pages never wait behind the
+//                  8 s/request throttle once a symbol has been fetched. The
+//                  live quote overlays the current price, so slightly older
+//                  bars don't change what the user sees.
+//   no cache     → fetch and wait (first-ever load of a symbol).
 async function fetchTwelveData(symbol, interval, fromUnix) {
   const apiKey = process.env.TWELVEDATA_API_KEY;
   if (!apiKey) throw new Error('TWELVEDATA_API_KEY not set in .env');
@@ -96,14 +120,26 @@ async function fetchTwelveData(symbol, interval, fromUnix) {
   const fromFilter = (candles) => candles.filter(c => c.time >= fromUnix);
 
   const row = histGet.get(symbol, tdInterval);
-  if (row && Date.now() - row.fetched_at < historyTTL()) {
+  if (row && isHistoryFresh(row.fetched_at)) {
     return fromFilter(JSON.parse(row.candles));
   }
 
-  const inflightKey = `${symbol}:${tdInterval}`;
-  if (_tdInflight.has(inflightKey)) {
-    return fromFilter(await _tdInflight.get(inflightKey));
+  if (row) {
+    refreshTwelveData(symbol, tdInterval, apiKey).catch(e => {
+      const ageMin = Math.round((Date.now() - row.fetched_at) / 60000);
+      console.warn(`[history] ${symbol}: background refresh failed (${e.message}) — keeping ${ageMin} min old cache`);
+    });
+    return fromFilter(JSON.parse(row.candles));
   }
+
+  return fromFilter(await refreshTwelveData(symbol, tdInterval, apiKey));
+}
+
+// Throttled network fetch that stores the result; concurrent callers for the
+// same symbol/interval share one request.
+function refreshTwelveData(symbol, tdInterval, apiKey) {
+  const inflightKey = `${symbol}:${tdInterval}`;
+  if (_tdInflight.has(inflightKey)) return _tdInflight.get(inflightKey);
 
   const fetchPromise = tdThrottled(async () => {
     // outputsize: bars needed. 2y + 280 warmup ≈ 1010 bars; use 1200 to be safe.
@@ -133,21 +169,10 @@ async function fetchTwelveData(symbol, interval, fromUnix) {
 
     if (deduped.length) histPut.run(symbol, tdInterval, JSON.stringify(deduped), Date.now());
     return deduped;
-  });
+  }).finally(() => _tdInflight.delete(inflightKey));
 
   _tdInflight.set(inflightKey, fetchPromise);
-  try {
-    return fromFilter(await fetchPromise);
-  } catch (e) {
-    if (row) {
-      const ageMin = Math.round((Date.now() - row.fetched_at) / 60000);
-      console.warn(`[history] ${symbol}: ${e.message} — serving stale cache (${ageMin} min old)`);
-      return fromFilter(JSON.parse(row.candles));
-    }
-    throw e;
-  } finally {
-    _tdInflight.delete(inflightKey);
-  }
+  return fetchPromise;
 }
 
 // ── Build meta from candles (replaces Yahoo chart.meta) ─────────────────────
@@ -158,8 +183,10 @@ function buildMeta(symbol, candles) {
 
   const yearAgoTs = last.time - 365 * 86400;
   const yearCandles = candles.filter(c => c.time >= yearAgoTs);
+  const last10 = candles.slice(-10);
 
   return {
+    averageDailyVolume10Day: last10.reduce((s, c) => s + (c.volume || 0), 0) / last10.length || null,
     symbol,
     regularMarketPrice:     last.close,
     regularMarketOpen:      last.open,
@@ -217,43 +244,118 @@ async function getQuotes(symbols) {
   return results;
 }
 
-// ── Live delayed quote via CBOE (same source as options, no auth) ─────────────
-// https://cdn.cboe.com/api/global/delayed_quotes/quotes/{SYMBOL}.json
-// Updated throughout the trading day (~15 min delayed), unlike daily bars.
-async function getLiveQuote(symbol) {
-  const sym = symbol.toUpperCase();
-  const key = `liveq:${sym}`;
-  const cached = cacheGet(key);
-  if (cached) return cached;
+// ── Live intraday quote ───────────────────────────────────────────────────────
+// Primary  : Yahoo Finance v8 quote — one batched call for many symbols, carries
+//            a real `regularMarketTime`, continuously updated during the session.
+// Fallback : CBOE delayed quote (per symbol, no auth).
+// Every quote carries `tradeTime` (unix seconds of the last print) so callers can
+// reject a stale feed: some providers freeze a symbol's quote for days (e.g. MU
+// stuck on a two-day-old print), which must not override the fresh daily close.
 
+// Parse a naive datetime string (e.g. "2026-09-22T15:59:59", exchange time, no
+// zone) to unix seconds. Downstream comparisons are day-granularity, so treating
+// it as UTC is close enough to tell a same-day quote from a days-old one.
+function parseTradeTime(s) {
+  if (!s) return null;
+  const iso = /[zZ]|[+-]\d\d:?\d\d$/.test(s) ? s : s + 'Z';
+  const t = Date.parse(iso);
+  return isNaN(t) ? null : Math.floor(t / 1000);
+}
+
+// Batched Yahoo quote — reuses the cookie+crumb session used for fundamentals.
+// Best-effort: returns {} on any failure so callers fall back to CBOE / candles.
+async function fetchYahooQuotes(symbols) {
+  const out = {};
+  if (!symbols.length) return out;
+  const session = await getYFSession();
+  if (!session) return out;
+  try {
+    const res = await axios.get('https://query1.finance.yahoo.com/v8/finance/quote', {
+      params: { symbols: symbols.join(','), crumb: session.crumb },
+      headers: { 'User-Agent': UA, 'Accept': 'application/json', 'Cookie': session.cookie },
+      timeout: 10000,
+    });
+    for (const x of res.data?.quoteResponse?.result || []) {
+      const price = x.regularMarketPrice;
+      if (price == null || isNaN(price)) continue;
+      const tradeTime = x.regularMarketTime ?? null;
+      const dt = tradeTime ? new Date(tradeTime * 1000) : null;
+      out[x.symbol] = {
+        price,
+        open:        x.regularMarketOpen ?? null,
+        high:        x.regularMarketDayHigh ?? null,
+        low:         x.regularMarketDayLow ?? null,
+        volume:      x.regularMarketVolume ?? 0,
+        prevClose:   x.regularMarketPreviousClose ?? null,
+        tradeTime,
+        marketState: x.marketState ?? null,
+        date:        dt ? dt.toISOString().slice(0, 10) : null,
+        time:        dt ? dt.toISOString().slice(11, 19) : null,
+        source:      'yahoo',
+        updatedAt:   Date.now(),
+      };
+    }
+  } catch (e) {
+    if ([401, 403].includes(e.response?.status)) _yfSession = null; // force re-auth
+    console.error('[Yahoo quote]', e.response?.status || '', e.message);
+  }
+  return out;
+}
+
+// CBOE single-symbol delayed quote — fallback source.
+async function fetchCboeQuote(sym) {
   try {
     const res = await axios.get(
       `https://cdn.cboe.com/api/global/delayed_quotes/quotes/${encodeURIComponent(sym)}.json`,
       { headers: { 'User-Agent': UA, 'Accept': 'application/json' }, timeout: 10000 }
     );
-
     const d = res.data?.data;
     const price = d?.current_price;
     if (price == null || isNaN(price)) return null;
-
     const [date, time] = String(d.last_trade_time || '').split('T');
-    const quote = {
+    return {
       price,
       open:      d.open ?? null,
       high:      d.high ?? null,
       low:       d.low ?? null,
       volume:    d.volume ?? 0,
       prevClose: d.prev_day_close ?? null,
+      tradeTime: parseTradeTime(d.last_trade_time),
       date:      date || null,
       time:      time || null,
+      source:    'cboe',
       updatedAt: Date.now(),
     };
-    cacheSet(key, quote, quoteTTL()); // 90s market hours, 15min outside
-    return quote;
   } catch (e) {
-    console.error(`[Live quote] ${symbol}:`, e.message);
+    console.error(`[CBOE quote] ${sym}:`, e.message);
     return null;
   }
+}
+
+// Prefetch quotes for a whole watchlist in one Yahoo call, warming the cache so
+// subsequent per-symbol getLiveQuote() calls are instant (avoids the slow
+// sequential per-symbol fetches). Symbols Yahoo omits are left for CBOE.
+async function primeQuotes(symbols) {
+  const syms = [...new Set(symbols.map(s => s.toUpperCase()))];
+  const missing = syms.filter(s => !cacheGet(`liveq:${s}`));
+  if (!missing.length) return;
+  const yahoo = await fetchYahooQuotes(missing);
+  for (const s of missing) {
+    if (yahoo[s]) cacheSet(`liveq:${s}`, yahoo[s], quoteTTL());
+  }
+}
+
+async function getLiveQuote(symbol) {
+  const sym = symbol.toUpperCase();
+  const key = `liveq:${sym}`;
+  const cached = cacheGet(key);
+  if (cached) return cached;
+
+  // Yahoo first (fresh timestamp), then CBOE
+  let quote = (await fetchYahooQuotes([sym]))[sym] || null;
+  if (!quote) quote = await fetchCboeQuote(sym);
+  if (quote) cacheSet(key, quote, quoteTTL()); // 90s market hours, 15min outside
+  return quote;
 }
 
 // ── Options via CBOE free public API (no auth, all expirations in one call) ───
@@ -375,36 +477,55 @@ async function getOptions(symbol, dateUnix) {
 const FUNDAMENTALS_TTL = 4 * 60 * 60 * 1000;
 
 // YF cookie/crumb — refreshed every 30 min
-let _yfSession = null; // { cookie, crumb, at }
+let _yfSession = null;        // { cookie, crumb, at }
+let _yfSessionFailUntil = 0;  // wall-clock ms; skip network session fetches until then
+let _yfSessionInflight = null; // shared promise while a refresh is in progress
+
+// Back off after a failed session fetch so one 429 doesn't trigger a retry storm
+// (Yahoo answers a burst of retries with more 429s). Longer cooldown for 429.
+const YF_FAIL_COOLDOWN    = 5 * 60 * 1000;   // generic failure: 5 min
+const YF_RATELIMIT_COOLDOWN = 15 * 60 * 1000; // HTTP 429: 15 min
 
 async function getYFSession() {
   const now = Date.now();
   if (_yfSession && (now - _yfSession.at) < 30 * 60 * 1000) return _yfSession;
+  if (now < _yfSessionFailUntil) return null;   // in cooldown after a recent failure
+  if (_yfSessionInflight) return _yfSessionInflight; // a refresh is already running
 
-  try {
-    // Step 1: visit finance.yahoo.com to pick up cookies
-    const r1 = await axios.get('https://finance.yahoo.com/', {
-      headers: { 'User-Agent': UA, 'Accept': 'text/html' },
-      timeout: 10000, maxRedirects: 5,
-    });
-    const rawCookies = r1.headers['set-cookie'] || [];
-    const cookie = rawCookies.map(c => c.split(';')[0]).join('; ');
+  _yfSessionInflight = (async () => {
+    try {
+      // Step 1: visit finance.yahoo.com to pick up cookies
+      const r1 = await axios.get('https://finance.yahoo.com/', {
+        headers: { 'User-Agent': UA, 'Accept': 'text/html' },
+        timeout: 10000, maxRedirects: 5,
+      });
+      const rawCookies = r1.headers['set-cookie'] || [];
+      const cookie = rawCookies.map(c => c.split(';')[0]).join('; ');
 
-    // Step 2: fetch crumb using those cookies
-    const r2 = await axios.get('https://query2.finance.yahoo.com/v1/test/getcrumb', {
-      headers: { 'User-Agent': UA, 'Cookie': cookie },
-      timeout: 8000,
-    });
-    const crumb = typeof r2.data === 'string' ? r2.data.trim() : null;
-    if (!crumb) throw new Error('empty crumb');
+      // Step 2: fetch crumb using those cookies
+      const r2 = await axios.get('https://query2.finance.yahoo.com/v1/test/getcrumb', {
+        headers: { 'User-Agent': UA, 'Cookie': cookie },
+        timeout: 8000,
+      });
+      const crumb = typeof r2.data === 'string' ? r2.data.trim() : null;
+      if (!crumb) throw new Error('empty crumb');
 
-    _yfSession = { cookie, crumb, at: now };
-    console.log('[Fundamentals] YF session refreshed, crumb:', crumb.slice(0, 6) + '…');
-    return _yfSession;
-  } catch (e) {
-    console.error('[Fundamentals] YF session error:', e.message);
-    return null;
-  }
+      _yfSession = { cookie, crumb, at: Date.now() };
+      _yfSessionFailUntil = 0;
+      console.log('[Fundamentals] YF session refreshed, crumb:', crumb.slice(0, 6) + '…');
+      return _yfSession;
+    } catch (e) {
+      const status = e.response?.status;
+      const cooldown = status === 429 ? YF_RATELIMIT_COOLDOWN : YF_FAIL_COOLDOWN;
+      _yfSessionFailUntil = Date.now() + cooldown;
+      console.error(`[Fundamentals] YF session error: ${e.message} — backing off ${Math.round(cooldown / 60000)} min`);
+      return null;
+    } finally {
+      _yfSessionInflight = null;
+    }
+  })();
+
+  return _yfSessionInflight;
 }
 
 function n(v) {
@@ -482,4 +603,15 @@ async function getFundamentalsBatch(symbols) {
   return results;
 }
 
-module.exports = { getQuotes, getHistory, getOptions, getLiveQuote, getFundamentalsBatch };
+// A live quote is trustworthy only if its last print is no older than the most
+// recent daily bar. A provider that freezes a symbol's quote for days returns a
+// tradeTime before the latest candle → rejected, so callers use the fresh close.
+function isQuoteFresh(quote, latestCandleTime) {
+  if (!quote || quote.tradeTime == null || !latestCandleTime) return false;
+  return quote.tradeTime >= latestCandleTime;
+}
+
+module.exports = {
+  getQuotes, getHistory, getOptions, getLiveQuote, getFundamentalsBatch,
+  primeQuotes, isQuoteFresh,
+};

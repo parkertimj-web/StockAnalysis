@@ -1,7 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, TrendingUp, TrendingDown } from 'lucide-react';
+import { Plus, X, TrendingUp, TrendingDown } from 'lucide-react';
+import toast from 'react-hot-toast';
 import api from '../api/client.js';
+import { fmtMoney, fmtSigned, fmtSignedPct } from '../utils/format.js';
 import useStore from '../store/store.js';
 import SignalBadge from '../components/common/SignalBadge.jsx';
 import LiveBadge from '../components/common/LiveBadge.jsx';
@@ -9,7 +11,7 @@ import Tip from '../components/common/Tip.jsx';
 import MeanRevBadge, { MEAN_REV_TIP } from '../components/common/MeanRevBadge.jsx';
 import { useAutoRefresh } from '../hooks/useAutoRefresh.js';
 
-const REFRESH_MS = 90_000; // 90 s — matches Stooq quote cache TTL during market hours
+const REFRESH_MS = 90_000; // 90 s — matches the backend live-quote cache TTL during market hours
 
 function fmt(n, d = 2) { return n != null ? n.toFixed(d) : '—'; }
 function fmtVol(n) {
@@ -62,9 +64,11 @@ export default function Dashboard() {
   const fetchData = useCallback(async () => {
     // Watchlist fetch is fast and reliable — always do it first independently
     // so a slow/failed signals call never blanks the watchlist.
+    let list = useStore.getState().watchlist;
     try {
       const wl = await api.get('/watchlist');
-      setWatchlist(wl.data);
+      list = wl.data;
+      setWatchlist(list);
     } catch { /* keep existing watchlist on error */ }
 
     // Signals fetch may be slow or 429 — run separately
@@ -79,9 +83,8 @@ export default function Dashboard() {
 
     // Fundamentals (PEG etc.) — best-effort, 4h cache, won't block other data
     try {
-      const wl = watchlist; // captured in closure; may be stale on first render — that's fine
-      if (wl.length) {
-        const symbols = wl.map(w => w.symbol).join(',');
+      if (list.length) {
+        const symbols = list.map(w => w.symbol).join(',');
         const fRes = await api.get('/market/fundamentals', { params: { symbols } });
         const fm = {};
         fRes.data.forEach(f => { fm[f.symbol] = f; });
@@ -98,15 +101,29 @@ export default function Dashboard() {
     e.preventDefault();
     const sym = addInput.trim().toUpperCase();
     if (!sym) return;
-    await api.post('/watchlist', { symbol: sym });
-    setAddInput('');
-    refreshNow(); // re-fetch watchlist + signals together
+    if (watchlist.some(w => w.symbol === sym)) {
+      toast(`${sym} is already on your watchlist`);
+      return;
+    }
+    try {
+      await api.post('/watchlist', { symbol: sym });
+      setAddInput('');
+      toast.success(`Added ${sym}`);
+      refreshNow(); // re-fetch watchlist + signals together
+    } catch (err) {
+      toast.error(err.response?.data?.error || `Couldn't add ${sym}`);
+    }
   }
 
   async function removeSymbol(sym) {
-    await api.delete(`/watchlist/${sym}`);
-    setWatchlist(watchlist.filter(w => w.symbol !== sym));
-    setSignals(prev => { const next = { ...prev }; delete next[sym]; return next; });
+    if (!window.confirm(`Remove ${sym} from your watchlist?`)) return;
+    try {
+      await api.delete(`/watchlist/${sym}`);
+      setWatchlist(watchlist.filter(w => w.symbol !== sym));
+      setSignals(prev => { const next = { ...prev }; delete next[sym]; return next; });
+    } catch (err) {
+      toast.error(err.response?.data?.error || `Couldn't remove ${sym}`);
+    }
   }
 
   return (
@@ -139,12 +156,17 @@ export default function Dashboard() {
       {/* Journal Stats */}
       {stats && (
         <div className="grid grid-cols-4 gap-3">
-          {[
-            ['Total P&L', `$${fmt(stats.totalPnl)}`, stats.totalPnl >= 0 ? 'text-green-400' : 'text-red-400'],
-            ['Win Rate',  `${fmt(stats.winRate, 1)}%`, 'text-blue-400'],
-            ['Trades',    stats.closedTrades, 'text-gray-200'],
-            ['Open',      stats.openTrades, 'text-yellow-400'],
-          ].map(([label, val, cls]) => (
+          {(() => {
+            // P&L and win rate are meaningless before any trade has closed
+            const hasClosed = stats.closedTrades > 0;
+            return [
+              ['Total P&L', hasClosed ? fmtMoney(stats.totalPnl) : '—',
+                !hasClosed ? 'text-gray-500' : stats.totalPnl >= 0 ? 'text-green-400' : 'text-red-400'],
+              ['Win Rate',  hasClosed ? `${fmt(stats.winRate, 1)}%` : '—', hasClosed ? 'text-blue-400' : 'text-gray-500'],
+              ['Trades',    stats.closedTrades, 'text-gray-200'],
+              ['Open',      stats.openTrades, stats.openTrades ? 'text-yellow-400' : 'text-gray-200'],
+            ];
+          })().map(([label, val, cls]) => (
             <div key={label} className="card p-3 text-center">
               <div className="text-gray-300 text-[10px]">{label}</div>
               <div className={`text-sm font-semibold mono ${cls}`}>{val}</div>
@@ -166,26 +188,50 @@ export default function Dashboard() {
           return (
             <div
               key={symbol}
-              className="card p-3 cursor-pointer hover:border-gray-600 transition-colors"
+              className="group card p-3 cursor-pointer hover:border-gray-600 transition-colors"
               onClick={() => { setSelectedSymbol(symbol); navigate(`/chart/${symbol}`); }}
             >
               <div className="flex items-start justify-between mb-2">
                 <div>
-                  <div className="text-sm font-bold text-gray-100">{symbol}</div>
-                  {price != null && (
-                    <div className="text-base font-semibold mono text-gray-200">${fmt(price)}</div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-sm font-bold text-gray-100">{symbol}</span>
+                    <button
+                      onClick={e => { e.stopPropagation(); removeSymbol(symbol); }}
+                      className="p-0.5 rounded text-gray-500 hover:text-red-400 hover:bg-gray-800 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                      title={`Remove ${symbol} from watchlist`}
+                      aria-label={`Remove ${symbol} from watchlist`}
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                  {price != null ? (
+                    <div className="text-base font-semibold mono text-gray-200">{fmtMoney(price)}</div>
+                  ) : !s && (
+                    <div className="h-5 w-20 mt-1 rounded bg-gray-800 animate-pulse" />
                   )}
                 </div>
                 <div className="flex flex-col items-end gap-1">
                   {change != null && (
                     <div className={`flex items-center gap-0.5 text-xs mono ${isUp ? 'text-green-400' : 'text-red-400'}`}>
                       {isUp ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                      {isUp ? '+' : ''}{fmt(change)} ({fmt(changePct, 2)}%)
+                      {fmtSigned(change)} ({fmtSignedPct(changePct)})
                     </div>
                   )}
                   {s && <SignalBadge signal={s.scores?.regime?.signal} score={s.scores?.regime?.score} max={s.scores?.regime?.max} size="xs" />}
                 </div>
               </div>
+
+              {!s && (loadingSignals || !lastUpdated) && (
+                <div className="space-y-2 animate-pulse" aria-hidden="true">
+                  <div className="h-7 rounded bg-gray-800/70" />
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[0, 1, 2, 3].map(i => <div key={i} className="h-3 rounded bg-gray-800/70" />)}
+                  </div>
+                </div>
+              )}
+              {!s && !loadingSignals && lastUpdated && (
+                <div className="text-[10px] text-gray-500">No signal data available for {symbol}.</div>
+              )}
 
               {s?.spark && (
                 <div className="mb-1.5 relative">
@@ -196,35 +242,27 @@ export default function Dashboard() {
 
               {s && (
                 <div className="grid grid-cols-4 gap-1 text-[10px] text-gray-300">
-                  <div>RSI<Tip text="Relative Strength Index — momentum 0–100. Above 70 = overbought, below 30 = oversold." below /> <span className="text-gray-300 mono">{fmt(s.rsi, 1)}</span></div>
-                  <div>ADX<Tip text="Average Directional Index — trend strength. 14+ = trending, 25+ = strong trend." below /> <span className="text-gray-300 mono">{fmt(s.adx, 1)}</span></div>
-                  <div>R:R<Tip text="Risk-to-Reward ratio — potential gain ÷ potential loss. ≥2 is favorable." below /> <span className={`mono ${s.rr >= 2 ? 'text-green-400' : 'text-gray-300'}`}>{s.rr != null ? fmt(s.rr) : '—'}</span></div>
-                  <div>Trend<Tip text="Supertrend (10, 3×ATR) direction — trailing-stop trend indicator. Up = price above the flip line." below /> <span className={`mono ${s.supertrend ? (s.supertrend.direction === 1 ? 'text-green-400' : 'text-red-400') : 'text-gray-300'}`}>{s.supertrend ? (s.supertrend.direction === 1 ? '▲ Up' : '▼ Dn') : '—'}</span></div>
+                  <div>RSI<Tip text="Relative Strength Index — momentum 0–100. Above 70 = overbought, below 30 = oversold." /> <span className="text-gray-300 mono">{fmt(s.rsi, 1)}</span></div>
+                  <div>ADX<Tip text="Average Directional Index — trend strength. 14+ = trending, 25+ = strong trend." /> <span className="text-gray-300 mono">{fmt(s.adx, 1)}</span></div>
+                  <div>R:R<Tip text="Risk-to-Reward ratio — potential gain ÷ potential loss. ≥2 is favorable." /> <span className={`mono ${s.rr >= 2 ? 'text-green-400' : 'text-gray-300'}`}>{s.rr != null ? fmt(s.rr) : '—'}</span></div>
+                  <div>Trend<Tip text="Supertrend (10, 3×ATR) direction — trailing-stop trend indicator. Up = price above the flip line." /> <span className={`mono ${s.supertrend ? (s.supertrend.direction === 1 ? 'text-green-400' : 'text-red-400') : 'text-gray-300'}`}>{s.supertrend ? (s.supertrend.direction === 1 ? '▲ Up' : '▼ Dn') : '—'}</span></div>
                 </div>
               )}
               {s?.meanReversion && (
                 <div className="flex items-center gap-1 mt-1.5 text-[10px] text-gray-300">
-                  <span>Mean Rev<Tip text={MEAN_REV_TIP} below /></span>
+                  <span>Mean Rev<Tip text={MEAN_REV_TIP} /></span>
                   <MeanRevBadge mr={s.meanReversion} size="xs" />
                 </div>
               )}
               {f && (
-                <div className="grid grid-cols-3 gap-1 text-[10px] mt-1">
-                  <div className="text-gray-300">PEG<Tip text="Price/Earnings-to-Growth — P/E ÷ EPS growth rate. Below 1 = potentially undervalued vs growth." below /> <span className={`mono font-medium ${f.pegRatio == null ? 'text-gray-300' : f.pegRatio < 1 ? 'text-green-400' : f.pegRatio < 2 ? 'text-yellow-400' : 'text-red-400'}`}>
+                <div className="flex justify-between gap-2 whitespace-nowrap text-[10px] mt-1">
+                  <div className="text-gray-300">PEG<Tip text="Price/Earnings-to-Growth — P/E ÷ EPS growth rate. Below 1 = potentially undervalued vs growth." /> <span className={`mono font-medium ${f.pegRatio == null ? 'text-gray-300' : f.pegRatio < 1 ? 'text-green-400' : f.pegRatio < 2 ? 'text-yellow-400' : 'text-red-400'}`}>
                     {f.pegRatio != null ? fmt(f.pegRatio) : '—'}
                   </span></div>
-                  <div className="text-gray-300">P/E<Tip text="Price-to-Earnings ratio — stock price ÷ trailing 12-month EPS." below /> <span className="mono text-gray-200">{f.trailingPE != null ? fmt(f.trailingPE, 1) : '—'}</span></div>
-                  <div className="text-gray-300">EPS<Tip text="Earnings Per Share — trailing 12-month net income ÷ diluted shares outstanding." below /> <span className="mono text-gray-200">{f.trailingEps != null ? `$${fmt(f.trailingEps)}` : '—'}</span></div>
+                  <div className="text-gray-300">P/E<Tip text="Price-to-Earnings ratio — stock price ÷ trailing 12-month EPS." /> <span className="mono text-gray-200">{f.trailingPE != null ? fmt(f.trailingPE, 1) : '—'}</span></div>
+                  <div className="text-gray-300">EPS<Tip text="Earnings Per Share — trailing 12-month net income ÷ diluted shares outstanding." /> <span className={`mono ${f.trailingEps < 0 ? 'text-red-400' : 'text-gray-200'}`}>{fmtMoney(f.trailingEps)}</span></div>
                 </div>
               )}
-
-              <button
-                onClick={e => { e.stopPropagation(); removeSymbol(symbol); }}
-                className="mt-2 text-gray-300 hover:text-red-400 transition-colors"
-                title="Remove from watchlist"
-              >
-                <Trash2 size={14} />
-              </button>
             </div>
           );
         })}
